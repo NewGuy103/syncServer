@@ -2,6 +2,8 @@ import logging
 import json
 import getpass
 
+import types
+
 import flask
 
 from flask import Flask, request
@@ -53,7 +55,6 @@ class Routes:
 
         return 0
 
-
     def file_uploads(self):
         """Route /upload"""
         files = request.files
@@ -68,41 +69,54 @@ class Routes:
 
         if len(files) == 0:
             return flask.make_response({
-                'error': "No filenames were passed to upload"
+                'error': "No files were passed to upload"
             }, 400)
-        
-        # non-batch operation [1 file]
-        if len(files) == 1:
-            first_file = list(request.files.values())[0]
-            result = self.db.add_file(
-                username, token, first_file.filename,
-                first_file.stream
-            )
-
-            if result == "FILE_EXISTS":
-                return flask.make_response({
-                    'error': 'Target filename exists. Use /modify to modify file or check the filename.'
-                }, 409)
-
-            return flask.make_response({
-                'batch': False,
-                'success': True
-            }, 200)
         
         successful_runs = []
         failed_runs = {}
 
+        response_code = 200
+
         for file in files.values():
             result = self.db.add_file(
-                username, token, file.filename, 
+                username, token, file.name, 
                 file.stream
             )
-
-            if result == "FILE_EXISTS":
-                failed_runs[file.filename] = result
-                continue
-            
-            successful_runs.append(file.filename)
+            match result:
+                case "NO_DIR_EXISTS":
+                    failed_runs[file.name] = {
+                        'error': "Directory path does not exist",
+                        'ecode': result
+                    }
+                    response_code = 400
+                case "FILE_EXISTS":
+                    failed_runs[file.name] = {
+                        'error': (
+                            "Target file path already exists. Use /modify to edit a file or"
+                            " check the filename."
+                        ),
+                        'ecode': result
+                    }
+                    response_code = 409
+                case 0:
+                    successful_runs.append(file.name)
+                case _:
+                    logging.error(
+                        "[/upload]: add_file function returned unexpected data: '%s'",
+                        result
+                    )
+                    return flask.abort(500)
+        
+        if len(files) == 1 and failed_runs.keys():
+            return flask.make_response(
+                flask.jsonify(failed_runs), 
+                response_code
+            )
+        elif len(files) == 1 and successful_runs:
+            return flask.make_response({
+                'batch': False,
+                'success': True
+            }, response_code)
 
         return flask.make_response(flask.jsonify({
             'batch': True,
@@ -126,38 +140,51 @@ class Routes:
                 'error': "No filenames were passed to upload"
             }, 400)
 
-        # non-batch operation [1 file]
-        if len(files) == 1:
-            first_file = list(request.files.values())[0]
-            result = self.db.modify_file(
-                username, token, first_file.filename,
-                first_file.stream
-            )
-
-            if result == "NO_FILE_EXISTS":
-                return flask.make_response({
-                    'error': 'Target filename does not exist. Use /upload to upload a new file or check the filename.'
-                }, 404)
-
-            return flask.make_response({
-                'batch': False,
-                'success': True
-            }, 200)
-
         successful_runs = []
         failed_runs = {}
 
+        response_code = 200
+
         for file in files.values():
             result = self.db.modify_file(
-                username, token, file.filename,
+                username, token, file.name, 
                 file.stream
             )
-
-            if result == "FILE_EXISTS":
-                failed_runs[file.filename] = result
-                continue
-
-            successful_runs.append(file.filename)
+            match result:
+                case "NO_DIR_EXISTS":
+                    failed_runs[file.name] = {
+                        'error': "Directory path does not exist",
+                        'ecode': result
+                    }
+                    response_code = 400
+                case "NO_FILE_EXISTS":
+                    failed_runs[file.name] = {
+                        'error': (
+                            "Target file path does not exist. Use /upload to upload a file or"
+                            " check the filename."
+                        ),
+                        'ecode': result
+                    }
+                    response_code = 404
+                case 0:
+                    successful_runs.append(file.name)
+                case _:
+                    logging.error(
+                        "[/modify]: modify_file function returned unexpected data: '%s'",
+                        result
+                    )
+                    return flask.abort(500)
+        
+        if len(files) == 1 and failed_runs.keys():
+            return flask.make_response(
+                flask.jsonify(failed_runs), 
+                response_code
+            )
+        elif len(files) == 1 and successful_runs:
+            return flask.make_response({
+                'batch': False,
+                'success': True
+            }, response_code)
 
         return flask.make_response(flask.jsonify({
             'batch': True,
@@ -176,44 +203,62 @@ class Routes:
         if verify_result != 0:
             return verify_result
 
-        if not body.get('filenames'):
+        if not body.get('file-paths'):
             return flask.make_response({
-                'error': 'No filenames provided to delete'
+                'error': 'No file paths provided to delete'
             }, 400)
 
         try:
-            filenames = json.loads(body['filenames'])
+            filenames = json.loads(body['file-paths'])
         except json.JSONDecodeError:
             return flask.make_response({
                 'error': 'Could not parse JSON: Expected a list-like JSON string'
             }, 400)
 
-        # non batch operation [1 file]
-        if len(filenames) == 1:
-            file = filenames[0]
-            result = self.db.remove_file(username, token, file)
+        successful_runs = []
+        failed_runs = {}
 
-            if result == "NO_FILE_EXISTS":
-                return flask.make_response({
-                    'error': 'Target filename does not exist. Use /upload to upload a new file or check the filename.'
-                }, 404)
-
+        response_code = 200
+        
+        for file in filenames:
+            result = self.db.remove_file(
+                username, token, file
+            )
+            match result:
+                case "NO_DIR_EXISTS":
+                    failed_runs[file] = {
+                        'error': "Directory path does not exist",
+                        'ecode': result
+                    }
+                    response_code = 400
+                case "NO_FILE_EXISTS":
+                    failed_runs[file] = {
+                        'error': (
+                            "Target file path does not exist. Use /upload to upload a file or"
+                            " check the filename."
+                        ),
+                        'ecode': result
+                    }
+                    response_code = 404
+                case 0:
+                    successful_runs.append(file)
+                case _:
+                    logging.error(
+                        "[/delete]: remove_file function returned unexpected data: '%s'",
+                        result
+                    )
+                    return flask.abort(500)
+        
+        if len(filenames) == 1 and failed_runs.keys():
+            return flask.make_response(
+                flask.jsonify(failed_runs), 
+                response_code
+            )
+        elif len(filenames) == 1 and successful_runs:
             return flask.make_response({
                 'batch': False,
                 'success': True
-            }, 200)
-
-        # batch operation [2+ files]
-        successful_runs = []
-        failed_runs = {}
-        for file in filenames:
-            result = self.db.remove_file(username, token, file)
-
-            if result == "NO_FILE_EXISTS":
-                failed_runs[file] = result
-                continue
-
-            successful_runs.append(file)
+            }, response_code)
 
         return flask.make_response(flask.jsonify({
             'batch': True,
@@ -232,24 +277,208 @@ class Routes:
         if verify_result != 0:
             return verify_result
 
-        if not body.get('filename'):
+        if not body.get('file-path'):
             return flask.make_response({
-                'error': 'No filenames provided to read'
+                'error': 'No file path provided to read'
             }, 400)
 
-        file = body['filename']
-        result = self.db.read_file(username, token, file)
-        
-        if result == "NO_FILE_EXISTS":
-            return flask.make_response({
-                'error': 'Target filename does not exist. Use /upload to upload a new file or check the filename.'
-            }, 404)
+        file_path = body['file-path']
+        if file_path[0] != "/":
+            file_path = "/" + file_path
 
-        response = flask.Response(
-            result, direct_passthrough=True,
-        )
-        response.headers['Content-Disposition'] = f'attachment; filename={body["filename"]}'
+        result = self.db.read_file(username, token, file_path)
+        response = flask.make_response()
+        
+        match result:
+            case "NO_DIR_EXISTS":
+                response.data = flask.jsonify({
+                    'error': "Directory path does not exist",
+                    'ecode': result
+                })
+                response.status_code = 400
+            case "NO_FILE_EXISTS":
+                response.data = flask.jsonify({
+                    'error': (
+                        "Target file path does not exist. Use /upload to upload a file or"
+                        " check the filename."
+                    ),
+                    'ecode': result
+                })
+                response.status_code = 404
+            case _ if isinstance(result, types.GeneratorType):
+                response = flask.Response(
+                    result, status=200,
+                    direct_passthrough=True
+                )
+                dirs = file_path.split("/")
+
+                filename = ''.join(dirs[-1])
+                response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+            case _:
+                logging.error(
+                    "[/read]: remove_file function returned unexpected data: '%s'",
+                    result
+                )
+                return flask.abort(500)
+         
         return response
+    
+    def dir_creations(self):
+        body = request.form
+        headers = request.headers
+
+        username = headers.get('syncServer-Username')
+        token = headers.get("syncServer-Token")
+
+        verify_result = self._verify_credentials(username, token)
+        if verify_result != 0:
+            return verify_result
+
+        if not body.get('dir-path'):
+            return flask.make_response({
+                'error': 'No directory path provided to create'
+            }, 400)
+        
+        dir_path = body.get('dir-path')
+        result = self.db.make_dir(
+            username, token, dir_path
+        )
+
+        response_code = 200
+        match result:
+            case "DIR_EXISTS":
+                response = {
+                    'error': 'Target directory exists, use /remove-dir to remove a directory.',
+                    'ecode': result
+                }
+                response_code = 409
+            case "MISSING_PATH":
+                response = {
+                    'error': 'Target directory path missing',
+                    'ecode': result
+                }
+                response_code = 400
+            case "INVALID_DIR_PATH":
+                response = {
+                    'error': 'Directory path is malformed or invalid',
+                    'ecode': result
+                }
+                response_code = 400
+            case 0:
+                response = {
+                    'success': True
+                }
+            case _:
+                logging.error(
+                    "'self.db.make_dir' returned unexpected data: '%s'",
+                    result
+                )
+                return flask.abort(500)
+
+        return flask.make_response(response, response_code)
+    
+    def dir_deletions(self):
+        body = request.form
+        headers = request.headers
+
+        username = headers.get('syncServer-Username')
+        token = headers.get("syncServer-Token")
+
+        verify_result = self._verify_credentials(username, token)
+        if verify_result != 0:
+            return verify_result
+
+        if not body.get('dir-path'):
+            return flask.make_response({
+                'error': 'No directory path provided to delete'
+            }, 400)
+        
+        dir_path = body.get('dir-path')
+        result = self.db.remove_dir(
+            username, token, dir_path
+        )
+
+        response_code = 200
+        match result:
+            case "NO_DIR_EXISTS":
+                response = {
+                    'error': 'Target directory does not exist, use /create-dir to create a directory.',
+                    'ecode': result
+                }
+                response_code = 404
+            case "ROOT_DIR":
+                response = {
+                    'error': 'Cannot delete root directory',
+                    'ecode': result
+                }
+                response_code = 400
+            case "INVALID_DIR_PATH":
+                response = {
+                    'error': 'Directory path is malformed or invalid',
+                    'ecode': result
+                }
+                response_code = 400
+            case 0:
+                response = {
+                    'success': True
+                }
+            case _:
+                logging.error(
+                    "'self.db.remove_dir' returned unexpected data: '%s'",
+                    result
+                )
+                return flask.abort(500)
+
+        return flask.make_response(response, response_code)
+    
+    def dir_listing(self):
+        body = request.form
+        headers = request.headers
+
+        username = headers.get('syncServer-Username')
+        token = headers.get("syncServer-Token")
+
+        verify_result = self._verify_credentials(username, token)
+        if verify_result != 0:
+            return verify_result
+
+        if not body.get('dir-path'):
+            return flask.make_response({
+                'error': 'No directory path provided to delete'
+            }, 400)
+        
+        dir_path = body.get('dir-path')
+        result = self.db.list_dir(
+            username, token, dir_path
+        )
+
+        response_code = 200
+        match result:
+            case "NO_DIR_EXISTS":
+                response = {
+                    'error': 'Target directory does not exist, use /create-dir to create a directory.',
+                    'ecode': result
+                }
+                response_code = 404
+            case "INVALID_DIR_PATH":
+                response = {
+                    'error': 'Directory path is malformed or invalid',
+                    'ecode': result
+                }
+                response_code = 400
+            case list():
+                response = {
+                    'dir-listing': result,
+                    'success': True
+                }
+            case _:
+                logging.error(
+                    "'self.db.list_dir' returned unexpected data: '%s'",
+                    result
+                )
+                return flask.abort(500)
+
+        return flask.make_response(flask.jsonify(response), response_code)
     
     @staticmethod
     def root_route():
@@ -259,7 +488,7 @@ def main(db_password: bytes | str):
     routes = Routes(db_password=db_password)
     logging.basicConfig(
         level=logging.DEBUG,
-        format='%(asctime)s - %(levelname)s - %(message)s',
+        format='[%(asctime)s] - [%(levelname)s] - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
         handlers=[
             logging.StreamHandler(),
@@ -274,6 +503,10 @@ def main(db_password: bytes | str):
     APP.add_url_rule("/delete", view_func=routes.file_deletes, methods=['POST'])
     APP.add_url_rule("/read", view_func=routes.file_reads, methods=['POST'])
 
+    APP.add_url_rule("/create-dir", view_func=routes.dir_creations, methods=['POST'])
+    APP.add_url_rule("/remove-dir", view_func=routes.dir_deletions, methods=['POST'])
+
+    APP.add_url_rule("/list-dir", view_func=routes.dir_listing, methods=['POST'])
     APP.add_url_rule("/", view_func=routes.root_route)
     APP.run(debug=False)
 

@@ -2,7 +2,6 @@ import sqlite3
 import uuid
 import secrets
 
-import traceback
 import logging
 
 import argon2  # argon2-cffi
@@ -11,33 +10,6 @@ import msgpack
 
 from pycrypter import CipherManager  # newguy103-pycrypter
 from typing import BinaryIO, TextIO
-
-def _log_excs(func_name: str, title_extra_data: str, exc_value: Exception):
-    """
-    Generates a formatted error log for exceptions raised within a specific function.
-
-    The format is:
-
-    [{func_name} {title_extra_data}][LF]|--| {exc_value}[LF]|--|
-
-    Parameters:
-        func_name (str): Name of the function where the exception occurred.
-        title_extra_data (str): Additional title or context for the log.
-        exc_value (Exception): Exception instance representing the raised error.
-
-    """
-
-    tb_data = traceback.format_exception(exc_value)
-    logging.error(
-        "[%s %s]\n|%s| %s\n|%s|",
-        func_name,
-        title_extra_data,
-        '-' * 30,
-        ''.join(tb_data),
-        '-' * 30
-    )
-
-
 
 class FileDatabase:
     """Add docstring. . ."""
@@ -59,14 +31,26 @@ class FileDatabase:
 
             CREATE TABLE IF NOT EXISTS files (
                 data_id TEXT PRIMARY KEY,
-                user_id TEXT,
-
-                filename TEXT,           
-                file_data BLOB,
+                dir_id TEXT,
                 
-                FOREIGN KEY (user_id) REFERENCES users(user_id)
+                user_id TEXT,
+                filename TEXT,
+
+                file_data BLOB,
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                FOREIGN KEY (dir_id) REFERENCES directories(dir_id)
+                    ON DELETE CASCADE
             );
             
+            CREATE TABLE IF NOT EXISTS directories (
+                dir_id TEXT PRIMARY KEY,
+                user_id TEXT,
+
+                dir_name TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+                    ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS config (
                 config_id TEXT PRIMARY KEY,
                 config_data BLOB,
@@ -227,11 +211,7 @@ class FileDatabase:
         except (argon2.exceptions.VerifyMismatchError, argon2.exceptions.VerificationError):
             return False
         except Exception as exc:
-            _log_excs(
-                "Database.verify_user",
-                "VERIFY-HASH EXCEPTION",
-                exc
-            )
+            logging.error("[verify_hash]: Verifying user hash failed: '%s'", exc)
             return exc
 
         return True
@@ -246,85 +226,90 @@ class FileDatabase:
             return "USER_EXISTS"
 
         hashed_pw = self.pw_hasher.hash(token)
-        
-        try:
-            with self.db:
-                user_id = str(uuid.uuid4())
-                self.cursor.execute("""
-                    INSERT INTO users VALUES (?, ?, ?)                
-                """, [user_id, username, hashed_pw])
-        except sqlite3.Error as exc:
-            _log_excs(
-                "Database.add_user",
-                "INSERT ERROR",
-                exc
-            )
-            return exc
-        except Exception as exc:
-            _log_excs(
-                "Database.add_user",
-                "INSERT EXCEPTION",
-                exc
-            )
-            return exc
+        user_id = str(uuid.uuid4())
+
+        dir_id = str(uuid.uuid4())
+        with self.db:
+            self.cursor.execute("""
+                INSERT INTO users (user_id, username, token)
+                VALUES (?, ?, ?)                
+            """, [user_id, username, hashed_pw])
+            self.cursor.execute("""
+                INSERT INTO directories (dir_id, user_id, dir_name)
+                VALUES (?, ?, '/')                
+            """, [dir_id, user_id])
 
         return 0
 
     def remove_user(self, username: str, token: str):
         self.cursor.execute("""
-            SELECT token FROM users WHERE username=?
+            SELECT user_id, token FROM users WHERE username=?
         """, [username])
         db_result = self.cursor.fetchone()
 
         if not db_result:
             return "NO_USER"
 
-        hashed_pw = db_result[0]
+        user_id = db_result[0]
+        hashed_pw = db_result[1]
         
         try:
             self.pw_hasher.verify(hashed_pw, token)
         except (argon2.exceptions.VerifyMismatchError, argon2.exceptions.VerificationError):
             return "INVALID_TOKEN"
         except Exception as exc:
-            _log_excs(
-                "Database.remove_user",
-                "VERIFY-HASH EXCEPTION",
-                exc
-            )
+            logging.error("[remove_user]: Verifying user hash failed: '%s'", exc)
             return exc
 
-        try:
-            with self.db:
-                self.cursor.execute("""
-                    DELETE FROM users
-                    WHERE username=?
-                """, [username])
-        except sqlite3.Error as exc:
-            _log_excs(
-                "Database.add_user",
-                "DELETE ERROR",
-                exc
-            )
-            return exc
-        except Exception as exc:
-            _log_excs(
-                "Database.remove_user",
-                "DELETE EXCEPTION",
-                exc
-            )
-            return exc
-
+        # irreversible delete
+        with self.db:
+            self.cursor.execute("""
+                DELETE FROM users
+                WHERE username=?
+            """, [username])
         return 0
-                
+    
+    def dir_checker(
+            self, file_path: str,
+            user_id: str
+    ):
+        if not isinstance(file_path, (bytes, str)):
+            raise TypeError("'file_path' must be bytes or str")
+        
+        if not file_path:
+            raise ValueError("'file_path' was not passed in args")
+
+        self.cursor.execute("""
+            SELECT user_id FROM users WHERE user_id=?
+        """, [user_id])
+        user_data = self.cursor.fetchone()
+
+        if not user_data:
+            return "NO_USER"
+        
+        dirs = file_path.split("/")
+        path_without_file = "/".join(dirs[0:-1])
+
+        if path_without_file == "":
+            path_without_file = "/"
+        
+        self.cursor.execute("""
+            SELECT dir_id FROM directories
+            WHERE dir_name=? AND user_id=?
+        """, [path_without_file, user_id])
+        db_result = self.cursor.fetchone()
+        
+        return db_result
+    
     def add_file(
             self, username: str,
-            token: str, filename: bytes | str,
+            token: str, file_path: bytes | str,
 
             file_stream: BinaryIO | TextIO,
             chunk_size: int = 50 * 1024 * 1024
     ):
-        if not isinstance(filename, (bytes, str)):
-            raise TypeError("'filename' must be bytes or str")
+        if not isinstance(file_path, (bytes, str)):
+            raise TypeError("'file_path' must be bytes or str")
         
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
@@ -344,12 +329,17 @@ class FileDatabase:
 
         first_chunk = file_stream.read(chunk_size)
         if not first_chunk:
-            raise IOError("file_stream is empty")
+            raise IOError("file stream is empty")
         
+        dir_exists = self.dir_checker(file_path, user_id)
+        if not dir_exists:
+            return "NO_DIR_EXISTS"
+        
+        dir_id = dir_exists[0]
         self.cursor.execute("""
             SELECT data_id FROM files
-            WHERE filename=? AND user_id=?
-        """, [filename, user_id])
+            WHERE filename=? AND user_id=? AND dir_id=?
+        """, [file_path, user_id, dir_id])
 
         found_filename = self.cursor.fetchone()
         if found_filename:
@@ -370,10 +360,14 @@ class FileDatabase:
         }
 
         with self.db:
+            file_data = [data_id, dir_id, user_id, file_path, first_chunk]
             self.cursor.execute("""
-                INSERT INTO files (data_id, user_id, filename, file_data)
-                VALUES (?, ?, ?, ?)
-            """, [data_id, user_id, filename, first_chunk])
+                INSERT INTO files (
+                    data_id, dir_id, user_id,
+                    filename, file_data
+                )
+                VALUES (?, ?, ?, ?, ?)
+            """, file_data)
             self.cursor.execute("""
                 INSERT INTO files_config (data_id, config)
                 VALUES (?, ?)
@@ -392,22 +386,22 @@ class FileDatabase:
                 self.cursor.execute("""
                     UPDATE files
                     SET file_data = file_data || ?
-                    WHERE user_id=? AND filename=?
-                """, [chunk, user_id, filename])
+                    WHERE user_id=? AND filename=? AND dir_id=?
+                """, [chunk, user_id, file_path, dir_id])
                 chunk = file_stream.read(chunk_size)
 
         return 0
 
     def modify_file(
             self, username: str,
-            token: str, filename: bytes | str,
+            token: str, file_path: bytes | str,
 
             file_stream: BinaryIO | TextIO,
             chunk_size: int = 50 * 1024 * 1024
     ):
-        if not isinstance(filename, (bytes, str)):
-            raise TypeError("'filename' must be bytes or str")
-
+        if not isinstance(file_path, (bytes, str)):
+            raise TypeError("'file_path' must be bytes or str")
+        
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
         """, [username])
@@ -426,12 +420,17 @@ class FileDatabase:
 
         first_chunk = file_stream.read(chunk_size)
         if not first_chunk:
-            raise IOError("file_stream is empty")
-
+            raise IOError("file stream is empty")
+        
+        dir_exists = self.dir_checker(file_path, user_id)
+        if not dir_exists:
+            return "NO_DIR_EXISTS"
+        
+        dir_id = dir_exists[0]
         self.cursor.execute("""
             SELECT data_id FROM files
-            WHERE filename=? AND user_id=?
-        """, [filename, user_id])
+            WHERE filename=? AND user_id=? AND dir_id=?
+        """, [file_path, user_id, dir_id])
 
         found_filename = self.cursor.fetchone()
         if not found_filename:
@@ -450,12 +449,13 @@ class FileDatabase:
             'encrypted': self.conf_secrets['use_encryption'],
             'chunk_size_used': chunk_size
         }
+        
         with self.db:
             self.cursor.execute("""
                 UPDATE files
                 SET file_data=?
-                WHERE user_id=? AND filename=?
-            """, [user_id, filename, first_chunk])
+                WHERE user_id=? AND filename=? AND dir_id=?
+            """, [first_chunk, user_id, file_path, dir_id])
             self.cursor.execute("""
                 UPDATE files_config
                 SET config=?
@@ -476,17 +476,17 @@ class FileDatabase:
                     UPDATE files
                     SET file_data = file_data || ?
                     WHERE user_id=? AND filename=?
-                """, [chunk, user_id, filename])
+                """, [chunk, user_id, file_path])
                 chunk = file_stream.read(chunk_size)
 
         return 0
 
     def remove_file(
             self, username: str,
-            token: str, filename: bytes | str
+            token: str, file_path: bytes | str
     ):
-        if not isinstance(filename, (bytes, str)):
-            raise TypeError("'filename' must be bytes or str")
+        if not isinstance(file_path, (bytes, str)):
+            raise TypeError("'file_path' must be bytes or str")
         
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
@@ -504,10 +504,15 @@ class FileDatabase:
         if isinstance(token_verified, Exception):
             return token_verified
         
+        dir_exists = self.dir_checker(file_path, user_id)
+        if not dir_exists:
+            return "NO_DIR_EXISTS"
+        
+        dir_id = dir_exists[0]
         self.cursor.execute("""
             SELECT data_id FROM files
-            WHERE filename=? AND user_id=?
-        """, [filename, user_id])
+            WHERE filename=? AND user_id=? AND dir_id=?
+        """, [file_path, user_id, dir_id])
 
         found_filename = self.cursor.fetchone()
         if not found_filename:
@@ -517,17 +522,17 @@ class FileDatabase:
             self.cursor.execute("""
                 DELETE FROM files
                 WHERE user_id=? AND filename=?
-            """, [user_id, filename])
+            """, [user_id, file_path])
 
         return 0
 
     def read_file(
             self, username: str,
-            token: str, filename: bytes | str,
+            token: str, file_path: bytes | str,
             chunk_size: int = 50 * 1024 * 1024
     ):
-        if not isinstance(filename, (bytes, str)):
-            raise TypeError("'filename' must be bytes or str")
+        if not isinstance(file_path, (bytes, str)):
+            raise TypeError("'file_path' must be bytes or str")
         
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
@@ -545,17 +550,22 @@ class FileDatabase:
         if isinstance(token_verified, Exception):
             return token_verified
         
+        dir_exists = self.dir_checker(file_path, user_id)
+        if not dir_exists:
+            return "NO_DIR_EXISTS"
+        
+        dir_id = dir_exists[0]
         self.cursor.execute("""
             SELECT data_id, length(file_data) FROM files
-            WHERE filename=? AND user_id=?
-        """, [filename, user_id])
+            WHERE filename=? AND user_id=? AND dir_id=?
+        """, [file_path, user_id, dir_id])
 
-        db_result = self.cursor.fetchone()
-        if not db_result:
+        found_filename = self.cursor.fetchone()
+        if not found_filename:
             return "NO_FILE_EXISTS"
-        
-        data_id = db_result[0]
-        data_length = db_result[1]
+
+        data_id = found_filename[0]
+        data_length = found_filename[1]
 
         self.cursor.execute("""
             SELECT config FROM files_config
@@ -567,30 +577,198 @@ class FileDatabase:
 
         if config['chunk_size_used'] != chunk_size:
             chunk_size = config['chunk_size_used']
-        offset = 0
 
-        while offset < data_length:
+        def generator():
+            offset = 0
+            while offset < data_length:
+                self.cursor.execute("""
+                    SELECT substr(file_data, ?, ?) 
+                    FROM files
+                    WHERE data_id=?
+                """, (offset + 1, chunk_size, data_id))
+
+                chunk = self.cursor.fetchone()[0]
+                offset += chunk_size
+
+                if config['encrypted']:
+                    chunk = self.cipher_mgr.fernet.decrypt_data(
+                        chunk, password=self._cipher_key,
+                        hash_pepper=self.cipher_conf['hash_pepper'],
+
+                        password_pepper=self.cipher_conf['password_pepper']
+                    )
+                yield chunk
+        
+        # Returning generator() instead of yield directly
+        # allows the function to return plain values instead of
+        # requiring me to use next() and then checking the value
+        return generator()
+    
+    def make_dir(
+            self, username: str,
+            token: str,
+            dir_path: str
+    ):
+        if not isinstance(dir_path, (bytes, str)):
+            raise TypeError("'dir_path' must be bytes or str")
+        
+        self.cursor.execute("""
+            SELECT user_id FROM users WHERE username=?
+        """, [username])
+        user_data = self.cursor.fetchone()
+
+        if not user_data:
+            return "NO_USER"
+        
+        user_id = user_data[0]
+        token_verified = self.verify_user(username, token)
+        
+        if not token_verified:
+            return "INVALID_TOKEN"
+        if isinstance(token_verified, Exception):
+            return token_verified
+        
+        self.cursor.execute("""
+            SELECT dir_id FROM directories
+            WHERE dir_name=? AND user_id=?
+        """, [dir_path, user_id])
+
+        found_filename = self.cursor.fetchone()
+        if found_filename:
+            return "DIR_EXISTS"
+        
+        if not dir_path:
+            return "MISSING_PATH"
+        
+        if dir_path[0] != "/":
+            dir_path = "/" + dir_path
+        
+        dirs = dir_path.split("/")
+        for i, dir_name in enumerate(dirs):
+            if i == 0:
+                continue
+
+            if not dir_name:
+                return "INVALID_DIR_PATH"
+            
+        dir_id = str(uuid.uuid4())
+        with self.db:
             self.cursor.execute("""
-                SELECT substr(file_data, ?, ?) 
-                FROM files
-                WHERE data_id=?
-            """, (offset + 1, chunk_size, data_id))
+                INSERT INTO directories (dir_id, user_id, dir_name)
+                VALUES (?, ?, ?)
+            """, [dir_id, user_id, dir_path])
+        
+        return 0
 
-            chunk = self.cursor.fetchone()[0]
-            offset += chunk_size
+    def remove_dir(
+            self, username: str,
+            token: str,
+            dir_path: str
+    ):
+        if not isinstance(dir_path, (bytes, str)):
+            raise TypeError("'dir_path' must be bytes or str")
+        
+        self.cursor.execute("""
+            SELECT user_id FROM users WHERE username=?
+        """, [username])
+        user_data = self.cursor.fetchone()
 
-            if config['encrypted']:
-                chunk = self.cipher_mgr.fernet.decrypt_data(
-                    chunk, password=self._cipher_key,
-                    hash_pepper=self.cipher_conf['hash_pepper'],
+        if not user_data:
+            return "NO_USER"
+        
+        user_id = user_data[0]
+        token_verified = self.verify_user(username, token)
+        
+        if not token_verified:
+            return "INVALID_TOKEN"
+        if isinstance(token_verified, Exception):
+            return token_verified
+        
+        self.cursor.execute("""
+            SELECT dir_id FROM directories
+            WHERE dir_name=? AND user_id=?
+        """, [dir_path, user_id])
 
-                    password_pepper=self.cipher_conf['password_pepper']
-                )
-            yield chunk
+        found_dir = self.cursor.fetchone()
+        if not found_dir:
+            return "NO_DIR_EXISTS"
+        
+        dir_id = found_dir[0]
+        if dir_path == "/":
+            return "ROOT_DIR"
+        
+        dirs = dir_path.split("/")
+        for i, dir_name in enumerate(dirs):
+            if i == 0:
+                continue
 
+            if not dir_name:
+                return "INVALID_DIR_PATH"
+
+        with self.db:
+            self.cursor.execute("""
+                DELETE FROM directories
+                WHERE dir_id=? AND user_id=?
+            """, [dir_id, user_id])
+            
+        return 0
+
+    def list_dir(
+            self, username: str,
+            token: str, 
+            dir_path: str
+    ):
+        if not isinstance(dir_path, (bytes, str)):
+            raise TypeError("'dir_path' must be bytes or str")
+        
+        self.cursor.execute("""
+            SELECT user_id FROM users WHERE username=?
+        """, [username])
+        user_data = self.cursor.fetchone()
+
+        if not user_data:
+            return "NO_USER"
+        
+        user_id = user_data[0]
+        token_verified = self.verify_user(username, token)
+        
+        if not token_verified:
+            return "INVALID_TOKEN"
+        if isinstance(token_verified, Exception):
+            return token_verified
+        
+        self.cursor.execute("""
+            SELECT dir_id FROM directories
+            WHERE dir_name=? AND user_id=?
+        """, [dir_path, user_id])
+
+        found_dir = self.cursor.fetchone()
+        if not found_dir:
+            return "NO_DIR_EXISTS"
+        
+        dirs = dir_path.split("/")
+        for i, dir_name in enumerate(dirs):
+            if i == 0:
+                continue
+            elif dir_path == "/":
+                break
+
+            if not dir_name:
+                return "INVALID_DIR_PATH"
+
+        dir_id = found_dir[0]
+        self.cursor.execute("""
+            SELECT filename FROM files
+            WHERE dir_id=? AND user_id=?
+        """, [dir_id, user_id])
+
+        dir_listing = self.cursor.fetchall()
+        files = [i[0] for i in dir_listing]
+        
+        return files
+        
+        
 if __name__ == "__main__":
     raise NotImplementedError(
         "this module cannot be run using __main__ and can only be imported"
     )
-
-
