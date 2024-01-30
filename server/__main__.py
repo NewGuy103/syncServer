@@ -1,27 +1,58 @@
+"""
+syncServer Flask Application
+
+Description:
+This module defines a Flask application (syncServer) for handling file synchronization operations.
+It includes routes for uploading, modifying, deleting, reading files, as well as operations on directories.
+
+Usage:
+python -m newguy103-syncserver
+
+Dependencies:
+- Flask: A micro web framework for Python.
+
+Attributes:
+- APP: Flask application instance.
+- __version__: Current version of the syncServer application.
+
+Classes:
+- Routes: Class containing methods for handling different routes in the application.
+
+Routes:
+- /upload: POST endpoint for uploading files.
+- /modify: POST endpoint for modifying files.
+- /delete: POST endpoint for deleting files.
+- /read: POST endpoint for reading files.
+- /create-dir: POST endpoint for creating directories.
+- /remove-dir: POST endpoint for removing directories.
+- /list-dir: POST endpoint for listing directory contents.
+- /: Root endpoint, returns a JSON response indicating the server is alive.
+"""
+
+
 import logging
 import json
 import getpass
+import secrets
 
 import types
+import os
 
 import flask
 
 from flask import Flask, request
-from pycrypter import ThreadManager
 
-# from ._db import FileDatabase 
+#from ._db import FileDatabase 
 from _db import FileDatabase  # use the above import once making setup.py
 
+__version__ = "1.0.0"
 APP = Flask(__name__)
-
 
 class Routes:
     def __init__(
         self, db_password: bytes | str = None
     ):
         self.db = FileDatabase(db_password=db_password)
-        self.thread_mgr: ThreadManager = ThreadManager()
-
         self.read_chunk_size = 50 * 1024 * 1024  # 50MB
 
     def _verify_credentials(self, username: str, token: str):
@@ -56,7 +87,6 @@ class Routes:
         return 0
 
     def file_uploads(self):
-        """Route /upload"""
         files = request.files
         headers = request.headers
 
@@ -69,7 +99,8 @@ class Routes:
 
         if len(files) == 0:
             return flask.make_response({
-                'error': "No files were passed to upload"
+                'error': 'No files provided to upload',
+                'ecode': 'MISSING_FILES'
             }, 400)
         
         successful_runs = []
@@ -78,6 +109,23 @@ class Routes:
         response_code = 200
 
         for file in files.values():
+            if not file.name:
+                return_name = f'unnamed-remote-[{file.filename}]-{secrets.randbelow(10**6)}'
+                failed_runs[return_name] = {
+                    'error': "No remote path was specified for this filename",
+                    'ecode': "NO_REMOTE_PATH"
+                }
+                response_code = 400
+                continue
+            elif not isinstance(file.name, (bytes, str)):
+                return_name = f'wrong-content-type-[{file.name}]-{secrets.randbelow(10**6)}'
+                failed_runs[return_name] = {
+                    'error': 'Remote file path is not bytes or string',
+                    'ecode': 'INVALID_CONTENT'
+                }
+                response_code = 400
+                continue
+
             result = self.db.add_file(
                 username, token, file.name, 
                 file.stream
@@ -107,22 +155,24 @@ class Routes:
                     )
                     return flask.abort(500)
         
-        if len(files) == 1 and failed_runs.keys():
-            return flask.make_response(
-                flask.jsonify(failed_runs), 
-                response_code
-            )
-        elif len(files) == 1 and successful_runs:
-            return flask.make_response({
-                'batch': False,
-                'success': True
-            }, response_code)
+        response = None
+        match len(files):
+            case 1 if failed_runs.keys():
+                response = failed_runs
+            case 1 if successful_runs:
+                response = {
+                    'batch': False,
+                    'success': True
+                }
+            case _:
+                response = {
+                    'batch': True,
+                    'ok': successful_runs,
+                    'fail': failed_runs
+                }
+                response_code = 200
 
-        return flask.make_response(flask.jsonify({
-            'batch': True,
-            'ok': successful_runs,
-            'fail': failed_runs
-        }), 200)
+        return flask.make_response(response, response_code)
 
     def file_updates(self):
         files = request.files
@@ -137,15 +187,33 @@ class Routes:
 
         if len(files) == 0:
             return flask.make_response({
-                'error': "No filenames were passed to upload"
+                'error': 'No files provided to modify',
+                'ecode': 'MISSING_FILES'
             }, 400)
-
+        
         successful_runs = []
         failed_runs = {}
 
         response_code = 200
 
         for file in files.values():
+            if not file.name:
+                return_name = f'unnamed-remote-[{file.filename}]-{secrets.randbelow(10**6)}'
+                failed_runs[return_name] = {
+                    'error': "No remote path was specified for this filename",
+                    'ecode': "NO_REMOTE_PATH"
+                }
+                response_code = 400
+                continue
+            elif not isinstance(file.name, (bytes, str)):
+                return_name = f'wrong-content-type-[{file.name}]-{secrets.randbelow(10**6)}'
+                failed_runs[return_name] = {
+                    'error': 'Remote file path is not bytes or string',
+                    'ecode': 'INVALID_CONTENT'
+                }
+                response_code = 400
+                continue
+
             result = self.db.modify_file(
                 username, token, file.name, 
                 file.stream
@@ -160,7 +228,7 @@ class Routes:
                 case "NO_FILE_EXISTS":
                     failed_runs[file.name] = {
                         'error': (
-                            "Target file path does not exist. Use /upload to upload a file or"
+                            "Target file path does not exist. Use /upload to create a file or"
                             " check the filename."
                         ),
                         'ecode': result
@@ -175,22 +243,24 @@ class Routes:
                     )
                     return flask.abort(500)
         
-        if len(files) == 1 and failed_runs.keys():
-            return flask.make_response(
-                flask.jsonify(failed_runs), 
-                response_code
-            )
-        elif len(files) == 1 and successful_runs:
-            return flask.make_response({
-                'batch': False,
-                'success': True
-            }, response_code)
+        response = None
+        match len(files):
+            case 1 if failed_runs.keys():
+                response = failed_runs
+            case 1 if successful_runs:
+                response = {
+                    'batch': False,
+                    'success': True
+                }
+            case _:
+                response = {
+                    'batch': True,
+                    'ok': successful_runs,
+                    'fail': failed_runs
+                }
+                response_code = 200
 
-        return flask.make_response(flask.jsonify({
-            'batch': True,
-            'ok': successful_runs,
-            'fail': failed_runs
-        }), 200)
+        return flask.make_response(response, response_code)
 
     def file_deletes(self):
         body = request.form
@@ -205,21 +275,31 @@ class Routes:
 
         if not body.get('file-paths'):
             return flask.make_response({
-                'error': 'No file paths provided to delete'
+                'error': 'No file paths provided to read',
+                'ecode': 'MISSING_FILEPATHS'
             }, 400)
 
         try:
-            filenames = json.loads(body['file-paths'])
+            passed_filenames = json.loads(body['file-paths'])
+            filenames = [
+                str(item) for item in passed_filenames 
+                if isinstance(item, (str, bytes)) and
+                item
+            ]
+            # Code above makes a new list that gets the string version of the
+            # remote file paths only if the file path is bytes or string
+            # and if the item exists
         except json.JSONDecodeError:
             return flask.make_response({
-                'error': 'Could not parse JSON: Expected a list-like JSON string'
+                'error': 'Could not parse JSON: Expected a list-like JSON string',
+                'ecode': "INVALID_JSON"
             }, 400)
-
+        
         successful_runs = []
         failed_runs = {}
 
         response_code = 200
-        
+
         for file in filenames:
             result = self.db.remove_file(
                 username, token, file
@@ -249,22 +329,30 @@ class Routes:
                     )
                     return flask.abort(500)
         
-        if len(filenames) == 1 and failed_runs.keys():
-            return flask.make_response(
-                flask.jsonify(failed_runs), 
-                response_code
-            )
-        elif len(filenames) == 1 and successful_runs:
-            return flask.make_response({
-                'batch': False,
-                'success': True
-            }, response_code)
-
-        return flask.make_response(flask.jsonify({
-            'batch': True,
-            'ok': successful_runs,
-            'fail': failed_runs
-        }), 200)
+        response = None
+        match len(filenames):
+            case 1 if failed_runs.keys():
+                response = failed_runs
+            case 1 if successful_runs:
+                response = {
+                    'batch': False,
+                    'success': True
+                }
+            case 0: 
+                response = {
+                    'error': "filenames path is empty",
+                    'ecode': "EMPTY_PATHLIST"
+                }
+                response_code = 400
+            case _:
+                response = flask.jsonify({
+                    'batch': True,
+                    'ok': successful_runs,
+                    'fail': failed_runs
+                })
+                response_code = 200
+            
+        return flask.make_response(response, response_code)
 
     def file_reads(self):
         body = request.form
@@ -279,32 +367,39 @@ class Routes:
 
         if not body.get('file-path'):
             return flask.make_response({
-                'error': 'No file path provided to read'
+                'error': 'No file path provided to read',
+                'ecode': 'MISSING_FILEPATH'
             }, 400)
 
         file_path = body['file-path']
-        if file_path[0] != "/":
+        if not isinstance(file_path, (bytes, str)):
+            return flask.make_response({
+                'error': 'file path provided is not bytes or str',
+                'ecode': "INVALID_CONTENT"
+            }, 400)
+        
+        if file_path[0] != "/": 
             file_path = "/" + file_path
 
         result = self.db.read_file(username, token, file_path)
-        response = flask.make_response()
-        
+        response = None
+
         match result:
             case "NO_DIR_EXISTS":
-                response.data = flask.jsonify({
+                err_response = {
                     'error': "Directory path does not exist",
                     'ecode': result
-                })
-                response.status_code = 400
+                }
+                response_code = 400
             case "NO_FILE_EXISTS":
-                response.data = flask.jsonify({
+                err_response = {
                     'error': (
                         "Target file path does not exist. Use /upload to upload a file or"
                         " check the filename."
                     ),
                     'ecode': result
-                })
-                response.status_code = 404
+                }
+                response_code = 404
             case _ if isinstance(result, types.GeneratorType):
                 response = flask.Response(
                     result, status=200,
@@ -321,7 +416,7 @@ class Routes:
                 )
                 return flask.abort(500)
          
-        return response
+        return response or flask.make_response(flask.jsonify(err_response), response_code)
     
     def dir_creations(self):
         body = request.form
@@ -336,10 +431,17 @@ class Routes:
 
         if not body.get('dir-path'):
             return flask.make_response({
-                'error': 'No directory path provided to create'
+                'error': 'No directory path provided to create',
+                'ecode': 'MISSING_DIRPATH'
             }, 400)
         
         dir_path = body.get('dir-path')
+        if not isinstance(dir_path, (bytes, str)):
+            return flask.make_response({
+                'error': "Directory path provided is not bytes or string",
+                'ecode': "INVALID_CONTENT"
+            }, 400)
+        
         result = self.db.make_dir(
             username, token, dir_path
         )
@@ -365,9 +467,7 @@ class Routes:
                 }
                 response_code = 400
             case 0:
-                response = {
-                    'success': True
-                }
+                response = {'success': True}
             case _:
                 logging.error(
                     "'self.db.make_dir' returned unexpected data: '%s'",
@@ -390,10 +490,17 @@ class Routes:
 
         if not body.get('dir-path'):
             return flask.make_response({
-                'error': 'No directory path provided to delete'
+                'error': 'No directory path provided to delete',
+                'ecode': 'MISSING_DIRPATH'
             }, 400)
         
         dir_path = body.get('dir-path')
+        if not isinstance(dir_path, (bytes, str)):
+            return flask.make_response({
+                'error': "Directory path provided is not bytes or string",
+                'ecode': "INVALID_CONTENT"
+            }, 400)
+        
         result = self.db.remove_dir(
             username, token, dir_path
         )
@@ -419,9 +526,7 @@ class Routes:
                 }
                 response_code = 400
             case 0:
-                response = {
-                    'success': True
-                }
+                response = {'success': True}
             case _:
                 logging.error(
                     "'self.db.remove_dir' returned unexpected data: '%s'",
@@ -444,10 +549,17 @@ class Routes:
 
         if not body.get('dir-path'):
             return flask.make_response({
-                'error': 'No directory path provided to delete'
+                'error': 'No directory path provided to list',
+                'ecode': 'MISSING_DIRPATH'
             }, 400)
         
         dir_path = body.get('dir-path')
+        if not isinstance(dir_path, (bytes, str)):
+            return flask.make_response({
+                'error': "Directory path provided is not bytes or string",
+                'ecode': "INVALID_CONTENT"
+            }, 400)
+        
         result = self.db.list_dir(
             username, token, dir_path
         )
@@ -484,7 +596,12 @@ class Routes:
     def root_route():
         return flask.jsonify({'alive': True})
 
-def main(db_password: bytes | str):
+def main():
+    db_password = getpass.getpass(
+        "Enter database password [or empty if not protected]: ")
+    
+    flask_route_port = os.environ.get('SYNCSERVER_PORT', 8561)
+
     routes = Routes(db_password=db_password)
     logging.basicConfig(
         level=logging.DEBUG,
@@ -508,9 +625,8 @@ def main(db_password: bytes | str):
 
     APP.add_url_rule("/list-dir", view_func=routes.dir_listing, methods=['POST'])
     APP.add_url_rule("/", view_func=routes.root_route)
-    APP.run(debug=False)
 
+    APP.run(debug=False, port=flask_route_port)
 
 if __name__ == '__main__':
-    password = getpass.getpass("Enter database password [or empty if not protected]: ")
-    main(password)
+    main()
