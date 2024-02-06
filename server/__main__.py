@@ -125,7 +125,17 @@ class Routes:
                 }
                 response_code = 400
                 continue
-
+            
+            stream_data = file.stream.read(1)
+            if not stream_data:
+                failed_runs[file.name] = {
+                    'error': "File stream is empty",
+                    'ecode': "EMPTY_STREAM"
+                }
+                response_code = 400
+                continue
+            
+            file.stream.seek(0)
             result = self.db.add_file(
                 username, token, file.name, 
                 file.stream
@@ -214,6 +224,16 @@ class Routes:
                 response_code = 400
                 continue
 
+            stream_data = file.stream.read(1)
+            if not stream_data:
+                failed_runs[file.name] = {
+                    'error': "File stream is empty",
+                    'ecode': "EMPTY_STREAM"
+                }
+                response_code = 400
+                continue
+            
+            file.stream.seek(0)
             result = self.db.modify_file(
                 username, token, file.name, 
                 file.stream
