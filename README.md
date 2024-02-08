@@ -30,9 +30,9 @@ from syncserver.client import FileInterface, DirInterface
 file_client = FileInterface(username="user", password="pass", server_url="http://localhost:5000")
 
 # Use provided methods for file and directory operations
-file_client.upload_file("path/to/local/file.txt", "remote/path/file.txt")
+file_client.upload([['~/Documents/my-file', '/my-file']])
 dir_client = DirInterface(username="user", password="pass", server_url="http://localhost:5000")
-dir_client.create_directory("path/to/new/directory")
+dir_client.create("/Docs")
 ```
 
 ## Server (Script)
