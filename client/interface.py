@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Any, Union
+from typing import Any, Literal, Union
 import requests
 
 __version__ = "1.0.0"
@@ -96,7 +96,10 @@ class FileInterface:
 
         return ok_uploads, failed_uploads
     
-    def remove(self, remote_paths: list | tuple, endpoint="/delete") -> Union[int, tuple[list, dict]]:
+    def remove(
+            self, remote_paths: list | tuple, 
+            true_delete: bool = False, endpoint="/delete"
+    ) -> Union[int, tuple[list, dict]]:
         """
         Remove files or directories from the SyncServer.
 
@@ -120,6 +123,9 @@ class FileInterface:
         if not isinstance(remote_paths, (list, tuple)):
             raise TypeError("remote paths must be in a list/tuple")
         
+        if not isinstance(true_delete, bool):
+            raise TypeError("true_delete must be a bool value")
+        
         headers = {
             'syncServer-Username': self.username,
             'syncServer-Token': self._password
@@ -130,9 +136,10 @@ class FileInterface:
             if not isinstance(remote_path, (bytes, str)):
                 raise TypeError(f"remote path '{remote_path}' is not bytes or str")
 
+        data = {'file-paths': json_list, 'true-delete': int(true_delete)}
         response = requests.post(
             url=self.server_url+endpoint, headers=headers,
-            data={'file-paths': json_list}, timeout=5
+            data=data, timeout=5
         )
 
         json_response = response.json()
@@ -147,6 +154,73 @@ class FileInterface:
 
         return ok_uploads, failed_uploads
     
+    def restore(
+            self, remote_path: bytes | str, 
+            restore_which: int = 0, endpoint="/restore"
+    ):
+        if not isinstance(remote_path, (bytes, str)):
+            raise TypeError("remote path must be bytes/str")
+
+        if not isinstance(restore_which, int):
+            raise TypeError("restore_which can only be an int value")
+        
+        headers = {
+            'syncServer-Username': self.username,
+            'syncServer-Token': self._password
+        }
+        data = {
+            'file-path': remote_path,
+            'restore-which': restore_which
+        }
+        response = requests.post(
+            url=self.server_url+endpoint, headers=headers,
+            data=data, timeout=5
+        )
+
+        return response.json()
+    
+    def list_deleted(self, remote_path: bytes | str, endpoint="/list-deleted") -> Union[dict[str, Any], bytes]:
+        if not isinstance(remote_path, (bytes, str)):
+            raise TypeError("remote path must be bytes/str")
+
+        headers = {
+            'syncServer-Username': self.username,
+            'syncServer-Token': self._password
+        }
+        response = requests.post(
+            url=self.server_url+endpoint, headers=headers,
+            data={'file-path': remote_path}, timeout=5
+        )
+
+        return response.json()
+
+    def remove_deleted(
+            self, remote_path: bytes | str, 
+            delete_which: int | Literal['all'], 
+            endpoint="/true-delete"
+    ):
+        if not isinstance(remote_path, (bytes, str)):
+            raise TypeError("remote path must be bytes/str")
+
+        if not isinstance(delete_which, int):
+            raise TypeError("restore_which can only be an int value")
+
+        headers = {
+            'syncServer-Username': self.username,
+            'syncServer-Token': self._password
+        }
+        data = {
+            'file-path': remote_path,
+            'delete-which': delete_which
+        }
+        response = requests.post(
+            url=self.server_url+endpoint, headers=headers,
+            data=data, timeout=5
+        )
+
+        print(response.content)
+        return response.json()
+
     def read(self, remote_path: bytes | str, endpoint="/read") -> Union[dict[str, Any], bytes]:
         """
         Read the contents of a file from the SyncServer.

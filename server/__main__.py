@@ -52,7 +52,7 @@ class Routes:
     def __init__(
         self, db_password: bytes | str = None
     ):
-        self.db = FileDatabase(db_password=db_password)
+        self.db: FileDatabase = FileDatabase(db_password=db_password)
         self.read_chunk_size = 50 * 1024 * 1024  # 50MB
 
     def _verify_credentials(self, username: str, token: str):
@@ -299,6 +299,27 @@ class Routes:
                 'ecode': 'MISSING_FILEPATHS'
             }, 400)
 
+        if not body.get('true-delete'):
+            return flask.make_response({
+                'error': "True delete parameter was not found",
+                'ecode': "MISSING_PARAMETER"
+            }, 400)
+        
+        true_delete = body['true-delete']
+        try:
+            true_del_var = int(true_delete)
+        except ValueError:
+            return flask.make_response({
+                'error': "True delete parameter can only be int, and must be 0/1",
+                'ecode': "INVALID_PARAMETER"
+            }, 400)
+        
+        if true_del_var not in [0, 1]:
+            return flask.make_response({
+                'error': "True delete parameter can only be int, and must be 0/1",
+                'ecode': "INVALID_PARAMETER"
+            }, 400)
+        
         try:
             passed_filenames = json.loads(body['file-paths'])
             filenames = [
@@ -322,7 +343,8 @@ class Routes:
 
         for file in filenames:
             result = self.db.remove_file(
-                username, token, file
+                username, token, file,
+                permanent_delete=bool(true_del_var)
             )
             match result:
                 case "NO_DIR_EXISTS":
@@ -372,6 +394,254 @@ class Routes:
                 })
                 response_code = 200
             
+        return flask.make_response(response, response_code)
+
+    def file_restores(self):
+        body = request.form
+        headers = request.headers
+
+        username = headers.get('syncServer-Username')
+        token = headers.get("syncServer-Token")
+
+        verify_result = self._verify_credentials(username, token)
+        if verify_result != 0:
+            return verify_result
+
+        if not body.get('file-path'):
+            return flask.make_response({
+                'error': 'No file path provided to restore',
+                'ecode': 'MISSING_FILEPATH'
+            }, 400)
+
+        if not body.get('restore-which'):
+            return flask.make_response({
+                'error': "restore-which parameter was not found",
+                'ecode': "MISSING_PARAMETER"
+            }, 400)
+        
+        restore_which = body['restore-which']
+        try:
+            restore_which_var = int(restore_which)
+        except ValueError:
+            return flask.make_response({
+                'error': "restore-which parameter can only be int",
+                'ecode': "INVALID_PARAMETER"
+            }, 400)
+        
+        if restore_which_var not in [0, 1]:
+            return flask.make_response({
+                'error': "True delete parameter can only be int, and must be 0/1",
+                'ecode': "INVALID_PARAMETER"
+            }, 400)
+
+        file_path = body['file-path']
+        if not isinstance(file_path, (bytes, str)):
+            return flask.make_response({
+                'error': 'file path provided is not bytes or str',
+                'ecode': "INVALID_CONTENT"
+            }, 400)
+        
+        if file_path[0] != "/": 
+            file_path = "/" + file_path
+        
+        response_code = 200
+        result = self.db.deleted_files.restore_file(
+            username, token, file_path, restore_which_var)
+
+        match result:
+            case 0:
+                response = {'success': True} 
+            case "NO_DIR_EXISTS":
+                response = {
+                    'error': "Directory path does not exist",
+                    'ecode': result
+                }
+                response_code = 400
+            case "NO_FILE_EXISTS":
+                response = {
+                    'error': (
+                        "Target file path does not exist. Use /upload to upload a file or"
+                        " check the filename."
+                    ),
+                    'ecode': result
+                }
+                response_code = 404
+            case "FILE_CONFLICT":
+                response = {
+                    'error': "File with the same name exists and is not deleted",
+                    'ecode': result
+                }
+                response_code = 409
+            case "FILE_NOT_DELETED":
+                response = {
+                    'error': "No files with that name is deleted",
+                    'ecode': result
+                }
+                response_code = 400
+            case "OUT_OF_BOUNDS":
+                response = {
+                    'error': 'Attempted to access a deleted file out of bounds',
+                    'ecode': result
+                }
+                response_code = 400
+            case _:
+                logging.error(
+                    "[/restore]: restore_file function returned unexpected data: '%s'",
+                    result
+                )
+                return flask.abort(500)
+            
+        return flask.make_response(response, response_code)
+    
+    def list_deleted(self):
+        body = request.form
+        headers = request.headers
+
+        username = headers.get('syncServer-Username')
+        token = headers.get("syncServer-Token")
+
+        verify_result = self._verify_credentials(username, token)
+        if verify_result != 0:
+            return verify_result
+
+        if not body.get('file-path'):
+            return flask.make_response({
+                'error': 'No file path provided to read',
+                'ecode': 'MISSING_FILEPATH'
+            }, 400)
+
+        file_path = body['file-path']
+        if not isinstance(file_path, (bytes, str)):
+            return flask.make_response({
+                'error': 'file path provided is not bytes or str',
+                'ecode': "INVALID_CONTENT"
+            }, 400)
+        
+        if file_path != ":all:" and file_path[0] != "/":
+            file_path = "/" + file_path
+        
+        response_code = 200
+        result = self.db.deleted_files.list_deleted(
+            username, token, file_path)
+        
+        match result:
+            case dict() if file_path == ":all:":
+                response = result
+            case list():
+                response = {
+                    'success': True,
+                    'delete-order': result
+                }
+            case "NO_DIR_EXISTS":
+                response = {
+                    'error': "Directory path does not exist",
+                    'ecode': result
+                }
+                response_code = 400
+            case "NO_MATCHING_FILES":
+                response = {
+                    'error': "No files were deleted with that name",
+                    'ecode': result
+                }
+                response_code = 404
+            case _:
+                logging.error(
+                    "[/list-deleted]: list_deleted function returned unexpected data: '%s'",
+                    result
+                )
+                return flask.abort(500)
+        
+        return flask.make_response(response, response_code)
+    
+    def remove_deleted(self):
+        body = request.form
+        headers = request.headers
+
+        username = headers.get('syncServer-Username')
+        token = headers.get("syncServer-Token")
+
+        verify_result = self._verify_credentials(username, token)
+        if verify_result != 0:
+            return verify_result
+
+        if not body.get('file-path'):
+            return flask.make_response({
+                'error': 'No file path provided to delete',
+                'ecode': 'MISSING_FILEPATH'
+            }, 400)
+
+        if not body.get('delete-which'):
+            return flask.make_response({
+                'error': "True delete parameter was not found",
+                'ecode': "MISSING_PARAMETER"
+            }, 400)
+
+        file_path = body['file-path']
+        true_delete = body['delete-which']
+        try:
+            if true_delete != "all":
+                # request.form turns int into a str
+                true_del_var = int(true_delete)
+        except ValueError:
+            return flask.make_response({
+                'error': "True delete parameter can only be int, and must be 0/1",
+                'ecode': "INVALID_PARAMETER"
+            }, 400)
+
+        if not isinstance(file_path, (bytes, str)):
+            return flask.make_response({
+                'error': 'file path provided is not bytes or str',
+                'ecode': "INVALID_CONTENT"
+            }, 400)
+        
+        if true_del_var not in [0, 1, 'all']:
+            return flask.make_response({
+                'error': "True delete parameter can only be int, and must be 0/1",
+                'ecode': "INVALID_PARAMETER"
+            }, 400)
+
+        response_code = 200
+        result = self.db.deleted_files.true_delete(
+            username, token, file_path,
+            delete_which=true_del_var
+        )
+        match result:
+            case 0:
+                response = {'success': True} 
+            case "NO_DIR_EXISTS":
+                response = {
+                    'error': "Directory path does not exist",
+                    'ecode': result
+                }
+                response_code = 400
+            case "NO_FILE_EXISTS":
+                response = {
+                    'error': (
+                        "Target file path does not exist. Use /upload to upload a file or"
+                        " check the filename."
+                    ),
+                    'ecode': result
+                }
+                response_code = 404
+            case "NO_MATCHING_FILES":
+                response = {
+                    'error': "No files with that name is deleted",
+                    'ecode': result
+                }
+                response_code = 400
+            case "OUT_OF_BOUNDS":
+                response = {
+                    'error': 'Attempted to access a deleted file out of bounds',
+                    'ecode': result
+                }
+                response_code = 400
+            case _:
+                logging.error(
+                    "[/true-delete]: true_delete function returned unexpected data: '%s'",
+                    result
+                )
+                return flask.abort(500)
+        
         return flask.make_response(response, response_code)
 
     def file_reads(self):
@@ -638,8 +908,12 @@ def main():
     APP.add_url_rule("/modify", view_func=routes.file_updates, methods=['POST'])
 
     APP.add_url_rule("/delete", view_func=routes.file_deletes, methods=['POST'])
+    APP.add_url_rule("/restore", view_func=routes.file_restores, methods=['POST'])
+    
     APP.add_url_rule("/read", view_func=routes.file_reads, methods=['POST'])
+    APP.add_url_rule("/list-deleted", view_func=routes.list_deleted, methods=['POST'])
 
+    APP.add_url_rule("/true-delete", view_func=routes.remove_deleted, methods=['POST'])
     APP.add_url_rule("/create-dir", view_func=routes.dir_creations, methods=['POST'])
     APP.add_url_rule("/remove-dir", view_func=routes.dir_deletions, methods=['POST'])
 

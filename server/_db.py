@@ -27,9 +27,10 @@ Note:
 """
 
 import sqlite3
+import types
 import uuid
-import secrets
 
+import secrets
 import logging
 
 import argon2  # argon2-cffi
@@ -37,7 +38,7 @@ import cryptography
 import msgpack
 
 from pycrypter import CipherManager  # newguy103-pycrypter
-from typing import BinaryIO, Generator, TextIO, Union
+from typing import BinaryIO, Generator, Literal, TextIO, Union
 
 __version__ = "1.0.0"
 
@@ -65,8 +66,8 @@ class FileDatabase:
     """
 
     def __init__(self, db_path='./syncServer.db', db_password=b''):
-        self.db = sqlite3.connect(db_path, check_same_thread=False)
-        self.cursor = self.db.cursor()
+        self.db: sqlite3.Connection = sqlite3.connect(db_path, check_same_thread=False)
+        self.cursor: sqlite3.Cursor = self.db.cursor()
 
         self.pw_hasher: argon2.PasswordHasher = argon2.PasswordHasher()
         self.cipher_mgr: CipherManager = CipherManager()
@@ -88,7 +89,8 @@ class FileDatabase:
                 filename TEXT,
 
                 file_data BLOB,
-                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+                    ON DELETE CASCADE,
                 FOREIGN KEY (dir_id) REFERENCES directories(dir_id)
                     ON DELETE CASCADE
             );
@@ -106,6 +108,17 @@ class FileDatabase:
                 config_id TEXT PRIMARY KEY,
                 config_data BLOB,
                 config_vars BLOB
+            );
+            
+            CREATE TABLE IF NOT EXISTS deleted_files (
+                delete_id TEXT PRIMARY KEY,
+                data_id TEXT,
+                
+                old_filepath TEXT,
+                delete_date TIMESTAMP DEFAULT (datetime('now', 'localtime') || '.' || strftime('%f', 'now', 'localtime')),
+                
+                FOREIGN KEY (data_id) REFERENCES files(data_id)
+                    ON DELETE CASCADE
             );
             
             CREATE TABLE IF NOT EXISTS files_config (
@@ -159,7 +172,7 @@ class FileDatabase:
                 'syncServer-protected': False,
 
                 'syncServer-recoveryKey': b'',
-                'syncServer-encryptionEnabled': False
+                'syncServer-encryptionEnabled': False  # will plan to use this soon
             }
 
             bytes_encoded_secrets = msgpack.packb(config_secrets)
@@ -181,11 +194,12 @@ class FileDatabase:
             raise RuntimeError(
                 "config variable 'syncServer-protected' not in config_vars dictionary"
             )
-
+        
         if not db_protected and db_password:
             raise RuntimeError(
                 "database password provided but database is not protected"
             )
+
         if db_protected:
             try:
                 msgpack_secrets = self.cipher_mgr.fernet.decrypt_data(
@@ -206,6 +220,8 @@ class FileDatabase:
 
         self._cipher_key = db_password
         self.cipher_conf = config_secrets['encryption_config']
+
+        self.deleted_files = DeletedFiles(self)
 
     def set_protection(
             self, set_protection: bool,
@@ -524,6 +540,9 @@ class FileDatabase:
         if not isinstance(file_path, (bytes, str)):
             raise TypeError("'file_path' must be bytes or str")
         
+        if not isinstance(chunk_size, int):
+            raise TypeError("'chunk_size' must be an int")
+
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
         """, [username])
@@ -554,9 +573,19 @@ class FileDatabase:
             WHERE filename=? AND user_id=? AND dir_id=?
         """, [file_path, user_id, dir_id])
 
-        found_filename = self.cursor.fetchone()
-        if found_filename:
-            return "FILE_EXISTS"
+        file_data = self.cursor.fetchall()
+
+        for file_tuple in file_data:
+            file_id = file_tuple[0]
+            self.cursor.execute("""
+                SELECT data_id FROM deleted_files
+                WHERE data_id=?
+                ORDER BY delete_date DESC
+            """, [file_id])
+
+            tmp_delete_data = self.cursor.fetchone()
+            if not tmp_delete_data:
+                return "FILE_EXISTS"
         
         if self.conf_secrets['use_encryption']:
             first_chunk = self.cipher_mgr.fernet.encrypt_data(
@@ -599,8 +628,8 @@ class FileDatabase:
                 self.cursor.execute("""
                     UPDATE files
                     SET file_data = file_data || ?
-                    WHERE user_id=? AND filename=? AND dir_id=?
-                """, [chunk, user_id, file_path, dir_id])
+                    WHERE user_id=? AND data_id=? AND dir_id=?
+                """, [chunk, user_id, data_id, dir_id])
                 chunk = file_stream.read(chunk_size)
 
         return 0
@@ -650,6 +679,9 @@ class FileDatabase:
         if not isinstance(file_path, (bytes, str)):
             raise TypeError("'file_path' must be bytes or str")
         
+        if not isinstance(chunk_size, int):
+            raise TypeError("'chunk_size' must be an int")
+
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
         """, [username])
@@ -680,11 +712,31 @@ class FileDatabase:
             WHERE filename=? AND user_id=? AND dir_id=?
         """, [file_path, user_id, dir_id])
 
-        found_filename = self.cursor.fetchone()
-        if not found_filename:
+        file_data = self.cursor.fetchall()
+        if not file_data:
             return "NO_FILE_EXISTS"
 
-        data_id = found_filename[0]
+        # [id1, id2, id3]
+        non_deleted_id = ""
+        for file_tuple in file_data:
+            file_id = file_tuple[0]
+            self.cursor.execute("""
+                SELECT data_id FROM deleted_files
+                WHERE data_id=?
+                ORDER BY delete_date DESC
+            """, [file_id])
+
+            tmp_delete_data = self.cursor.fetchone()
+            if tmp_delete_data:
+                continue
+
+            non_deleted_id = file_id
+            break
+
+        if not non_deleted_id:
+            return "NO_FILE_EXISTS"
+        
+        data_id = non_deleted_id
         if self.conf_secrets['use_encryption']:
             first_chunk = self.cipher_mgr.fernet.encrypt_data(
                 first_chunk, password=self._cipher_key,
@@ -702,8 +754,8 @@ class FileDatabase:
             self.cursor.execute("""
                 UPDATE files
                 SET file_data=?
-                WHERE user_id=? AND filename=? AND dir_id=?
-            """, [first_chunk, user_id, file_path, dir_id])
+                WHERE user_id=? AND data_id=? AND dir_id=?
+            """, [first_chunk, user_id, non_deleted_id, dir_id])
             self.cursor.execute("""
                 UPDATE files_config
                 SET config=?
@@ -723,15 +775,17 @@ class FileDatabase:
                 self.cursor.execute("""
                     UPDATE files
                     SET file_data = file_data || ?
-                    WHERE user_id=? AND filename=?
-                """, [chunk, user_id, file_path])
+                    WHERE user_id=? AND data_id=?
+                """, [chunk, user_id, non_deleted_id])
                 chunk = file_stream.read(chunk_size)
 
         return 0
 
     def remove_file(
             self, username: str,
-            token: str, file_path: bytes | str
+            token: str, file_path: bytes | str,
+
+            permanent_delete: bool = False
     ) -> Union[str, int]:
         """
         Remove an existing file from the database for a specific user.
@@ -761,7 +815,7 @@ class FileDatabase:
         - Irreversibly removes the file from the 'files' table in the database.
         - Returns 0 upon successful removal of the file from the database.
         """
-
+        
         if not isinstance(file_path, (bytes, str)):
             raise TypeError("'file_path' must be bytes or str")
         
@@ -791,16 +845,44 @@ class FileDatabase:
             WHERE filename=? AND user_id=? AND dir_id=?
         """, [file_path, user_id, dir_id])
 
-        found_filename = self.cursor.fetchone()
-        if not found_filename:
+        file_data = self.cursor.fetchall()
+        if not file_data:
+            return "NO_FILE_EXISTS"
+
+        non_deleted_id = ""
+        for file_tuple in file_data:
+            file_id = file_tuple[0]
+            self.cursor.execute("""
+                SELECT data_id FROM deleted_files
+                WHERE data_id=?
+                ORDER BY delete_date DESC
+            """, [file_id])
+        
+            tmp_delete_data = self.cursor.fetchone()
+            if tmp_delete_data:
+                continue
+
+            non_deleted_id = file_id
+            break
+        
+        if not non_deleted_id:
             return "NO_FILE_EXISTS"
         
-        with self.db:
-            self.cursor.execute("""
-                DELETE FROM files
-                WHERE user_id=? AND filename=?
-            """, [user_id, file_path])
-
+        data_id = non_deleted_id
+        if permanent_delete:
+            with self.db:
+                self.cursor.execute("""
+                    DELETE FROM files
+                    WHERE user_id=? AND filename=? AND data_id=?
+                """, [user_id, file_path, data_id])
+        else: 
+            delete_id = str(uuid.uuid4())
+            with self.db:
+                self.cursor.execute("""
+                    INSERT INTO deleted_files (
+                        delete_id, data_id, old_filepath
+                    ) VALUES (?, ?, ?)
+                """, [delete_id, data_id, file_path])
         return 0
 
     def read_file(
@@ -845,6 +927,9 @@ class FileDatabase:
         if not isinstance(file_path, (bytes, str)):
             raise TypeError("'file_path' must be bytes or str")
         
+        if not isinstance(chunk_size, int):
+            raise TypeError("'chunk_size' must be an int")
+        
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
         """, [username])
@@ -871,13 +956,35 @@ class FileDatabase:
             WHERE filename=? AND user_id=? AND dir_id=?
         """, [file_path, user_id, dir_id])
 
-        found_filename = self.cursor.fetchone()
-        if not found_filename:
+        file_data = self.cursor.fetchall()
+        if not file_data:
             return "NO_FILE_EXISTS"
 
-        data_id = found_filename[0]
-        data_length = found_filename[1]
+        # [id1, id2, id3]
+        non_deleted_id = ""
+        data_length = 0
 
+        for file_tuple in file_data:
+            file_id = file_tuple[0]
+            self.cursor.execute("""
+                SELECT data_id FROM deleted_files
+                WHERE data_id=?
+                ORDER BY delete_date DESC
+            """, [file_id])
+
+            tmp_delete_data = self.cursor.fetchone()
+            if tmp_delete_data:
+                continue
+
+            non_deleted_id = file_id
+            data_length = file_tuple[1]
+
+            break
+
+        if not non_deleted_id:
+            return "NO_FILE_EXISTS"
+
+        data_id = non_deleted_id
         self.cursor.execute("""
             SELECT config FROM files_config
             WHERE data_id=?
@@ -1168,6 +1275,300 @@ class FileDatabase:
         
         return files
         
+
+class DeletedFiles(FileDatabase):
+    def __init__(self, parent: FileDatabase):
+        self.db: sqlite3.Connection = parent.db
+        self.cursor: sqlite3.Cursor = parent.cursor
+
+        self.pw_hasher: argon2.PasswordHasher = parent.pw_hasher
+        self.cipher_mgr: CipherManager = parent.cipher_mgr
+
+        self.conf_secrets: dict = parent.conf_secrets
+        self.conf_vars: dict = parent.conf_vars
+
+        self._cipher_key: bytes | str = parent._cipher_key
+        self.cipher_conf: dict = self.conf_secrets['encryption_config']
+    
+    def list_deleted(
+            self, username: str,
+            token: str, file_path: bytes | str
+    ) -> str | list:
+        if not isinstance(file_path, (bytes, str)):
+            raise TypeError("'file_path' must be bytes or str")
+
+        self.cursor.execute("""
+            SELECT user_id FROM users WHERE username=?
+        """, [username])
+        user_data = self.cursor.fetchone()
+
+        if not user_data:
+            return "NO_USER"
+
+        user_id = user_data[0]
+        token_verified = self.verify_user(username, token)
+
+        if not token_verified:
+            return "INVALID_TOKEN"
+        if isinstance(token_verified, Exception):
+            return token_verified
+
+        if file_path == ":all:":
+            self.cursor.execute("""
+                SELECT filename, data_id FROM files
+                WHERE user_id=?
+            """, [user_id])
+            file_ids = self.cursor.fetchall()
+
+            grouped_data = {}
+            for item in file_ids:
+                filename, data_id = item
+                if filename in grouped_data:
+                    grouped_data[filename].append(data_id)
+                else:
+                    grouped_data[filename] = [data_id]
+
+            # Convert dictionary values to lists of tuples
+            result = [[(key, val) for val in grouped_data[key]] for key in grouped_data]
+            all_results = {}
+
+            for path_and_id_tuple in result:
+                for file_path, file_id in path_and_id_tuple:
+                    if file_path not in all_results:
+                        all_results[file_path] = []
+                    
+                    self.cursor.execute("""
+                        SELECT delete_date FROM deleted_files
+                        WHERE data_id=?
+                        ORDER BY delete_date DESC
+                    """, [file_id])
+                    tmp_del_date = self.cursor.fetchone()
+                    if tmp_del_date:
+                        all_results[file_path].append(tmp_del_date[0])
+                
+                file_path = path_and_id_tuple[0][0]
+                all_results[file_path] = sorted(all_results[file_path], reverse=True)
+            
+            return all_results
+
+        dir_exists = self.dir_checker(file_path, user_id)
+        if not dir_exists:
+            return "NO_DIR_EXISTS"
+
+        dir_id = dir_exists[0]
+        self.cursor.execute("""
+            SELECT data_id FROM files
+            WHERE filename=? AND user_id=? AND dir_id=?
+        """, [file_path, user_id, dir_id])
+
+        file_data = self.cursor.fetchall()
+        if not file_data:
+            return "NO_MATCHING_FILES"
+
+        delete_data = []
+        for file_tuple in file_data:
+            file_id = file_tuple[0]
+            self.cursor.execute("""
+                SELECT delete_date FROM deleted_files
+                WHERE data_id=?
+                ORDER BY delete_date DESC;
+            """, [file_id])
+
+            tmp_delete_data = self.cursor.fetchone()
+            if tmp_delete_data:
+                delete_data.append(tmp_delete_data[0])
+                continue
+
+        if not delete_data:
+            return "NO_MATCHING_FILES"
+
+        return sorted(delete_data, reverse=True)
+
+    def restore_file(
+            self, username: str,
+            token: str, file_path: bytes | str,
+            restore_which: int = None
+    ) -> str | int:
+        if not isinstance(file_path, (bytes, str)):
+            raise TypeError("'file_path' must be bytes or str")
+
+        if not isinstance(restore_which, (int, types.NoneType)):
+            # Why I put types.NoneType and int instead of plain int, is to allow
+            # implicit restore if there's only one file deleted
+            raise TypeError("'restore_which' must be an int")
+        
+        self.cursor.execute("""
+            SELECT user_id FROM users WHERE username=?
+        """, [username])
+        user_data = self.cursor.fetchone()
+
+        if not user_data:
+            return "NO_USER"
+
+        user_id = user_data[0]
+        token_verified = self.verify_user(username, token)
+
+        if not token_verified:
+            return "INVALID_TOKEN"
+        if isinstance(token_verified, Exception):
+            return token_verified
+
+        dir_exists = self.dir_checker(file_path, user_id)
+        if not dir_exists:
+            return "NO_DIR_EXISTS"
+
+        dir_id = dir_exists[0]
+        self.cursor.execute("""
+            SELECT data_id FROM files
+            WHERE filename=? AND user_id=? AND dir_id=?
+        """, [file_path, user_id, dir_id])
+
+        file_data = self.cursor.fetchall()
+        if not file_data:
+            return "NO_FILE_EXISTS"
+
+        delete_data = []
+        for file_tuple in file_data:
+            file_id = file_tuple[0]
+            self.cursor.execute("""
+                SELECT data_id FROM deleted_files
+                WHERE data_id=?
+                ORDER BY delete_date DESC
+            """, [file_id])
+
+            tmp_delete_data = self.cursor.fetchone()
+            if tmp_delete_data:
+                del_data_id = tmp_delete_data[0]
+                delete_data.append(del_data_id)
+
+                continue
+
+            # Assume all IDs are in the deleted_files table, if not
+            # then assume there is one file that is not marked deleted
+            return "FILE_CONFLICT"
+
+        if not delete_data:
+            return "FILE_NOT_DELETED"
+
+        if len(delete_data) > 1 and restore_which is None:
+            raise ValueError(
+                "found more than one deleted file but no parameter to restore which file")
+
+        # If the value of restore_which is bigger than the length of deleted file ids
+        # minus one (since we index starting from zero), then assume out of bounds
+        if isinstance(restore_which, int) and restore_which > len(delete_data) - 1:
+            return "OUT_OF_BOUNDS"
+
+        if len(delete_data) == 1:
+            restore_which = 0  # restore the found one implicitly
+
+        # SQLite3 returns the whole list oldest -> latest so we reverse it
+        delete_data = list(reversed(delete_data))
+
+        with self.db:
+            # Fetch the list with the data ids and then get the data id
+            # [ ('data-id') ] -> delete_data[restore_which]
+
+            data_id = delete_data[restore_which]
+            self.cursor.execute("""
+                DELETE FROM deleted_files
+                WHERE data_id=?
+            """, [data_id])
+
+        return 0
+    
+    def true_delete(
+            self, username: str,
+            token: str, file_path: bytes | str,
+            delete_which: int | Literal['all'] = 0
+    ) -> str | list:
+        if not isinstance(file_path, (bytes, str)):
+            raise TypeError("'file_path' must be bytes or str")
+
+        if not (delete_which == "all" or isinstance(delete_which, int)):
+            raise TypeError("'delete_which' can only be an int or 'all'")
+        
+        self.cursor.execute("""
+            SELECT user_id FROM users WHERE username=?
+        """, [username])
+        user_data = self.cursor.fetchone()
+
+        if not user_data:
+            return "NO_USER"
+
+        user_id = user_data[0]
+        token_verified = self.verify_user(username, token)
+
+        if not token_verified:
+            return "INVALID_TOKEN"
+        if isinstance(token_verified, Exception):
+            return token_verified
+
+        dir_exists = self.dir_checker(file_path, user_id)
+        if not dir_exists:
+            return "NO_DIR_EXISTS"
+
+        dir_id = dir_exists[0]
+        self.cursor.execute("""
+            SELECT data_id FROM files
+            WHERE filename=? AND user_id=? AND dir_id=?
+        """, [file_path, user_id, dir_id])
+
+        file_data = self.cursor.fetchall()
+        if not file_data:
+            return "NO_MATCHING_FILES"
+
+        delete_data = []
+        for file_tuple in file_data:
+            file_id = file_tuple[0]
+            self.cursor.execute("""
+                SELECT data_id FROM deleted_files
+                WHERE data_id=?
+                ORDER BY delete_date DESC
+            """, [file_id])
+
+            tmp_delete_data = self.cursor.fetchone()
+            if tmp_delete_data:
+                del_data_id = tmp_delete_data[0]
+                delete_data.append(del_data_id)
+
+                continue
+
+        if not delete_data:
+            return "NO_MATCHING_FILES"
+
+        if len(delete_data) > 1 and delete_which is None:
+            raise ValueError(
+                "found more than one deleted file but no parameter to restore which file")
+
+        # If the value of delete_which is bigger than the length of deleted file ids
+        # minus one (since we index starting from zero), then assume out of bounds
+        if isinstance(delete_which, int) and delete_which > len(delete_data) - 1:
+            return "OUT_OF_BOUNDS"
+
+        if len(delete_data) == 1:
+            delete_which = 0  # delete the found one implicitly
+
+        # SQLite3 returns the whole list oldest -> latest so we reverse it
+        delete_data = list(reversed(delete_data))
+
+        if delete_which == "all":
+            with self.db:
+                for fileid_to_delete in delete_data:
+                    self.cursor.execute("""
+                        DELETE FROM files
+                        WHERE data_id=?
+                    """, [fileid_to_delete])
+        else:
+            with self.db:
+                delete_which_id = delete_data[delete_which]
+                self.cursor.execute("""
+                    DELETE FROM files
+                    WHERE data_id=?
+                """, [delete_which_id])
+        
+        return 0
+
         
 if __name__ == "__main__":
     raise NotImplementedError(
