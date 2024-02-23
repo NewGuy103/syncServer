@@ -22,6 +22,9 @@ Routes:
 - /upload: POST endpoint for uploading files.
 - /modify: POST endpoint for modifying files.
 - /delete: POST endpoint for deleting files.
+- /restore: POST endpoint for restoring deleted files.
+- /list-deleted: POST endpoint to list deleted versions of a file.
+- /true-delete: POST endpoint to true delete a deleted version of a file.
 - /read: POST endpoint for reading files.
 - /create-dir: POST endpoint for creating directories.
 - /remove-dir: POST endpoint for removing directories.
@@ -33,8 +36,8 @@ Routes:
 import logging
 import json
 import getpass
-import secrets
 
+import secrets
 import types
 import os
 
@@ -45,41 +48,39 @@ from flask import Flask, request
 #from ._db import FileDatabase 
 from _db import FileDatabase  # use the above import once making setup.py
 
-__version__ = "1.0.0"
-APP = Flask(__name__)
+__version__: str = "1.0.0"
+APP: flask.Flask = Flask(__name__)
 
 class Routes:
     def __init__(
         self, db_password: bytes | str = None
     ):
         self.db: FileDatabase = FileDatabase(db_password=db_password)
-        self.read_chunk_size = 50 * 1024 * 1024  # 50MB
+        self.read_chunk_size: int = 50 * 1024 * 1024  # 50MB
 
-    def _verify_credentials(self, username: str, token: str):
+    def _verify_credentials(self, username: str, token: str) -> flask.Response | int:
         """
         Return response depending on token verification status
         
         Parameters:
             username (str): Username to verify
             password (str): Password to verify
-        
-        Returns:
-            [if not username or token]: {'error': 'No verification credentials was sent'} HTTP 401
-            [if token not verified/no user]: {'error': 'Invalid verification credentials'}, HTTP 401
-            [if an Exception occured during verification]: HTTP 500
         """
         if not username or not token:
-            err_response = flask.make_response(
-                {'error': 'No verification credentials was sent'}, 401
-            )
+            err_response = flask.make_response({
+                'error': "No verification credentials were sent.",
+                'ecode': "MISSING_CREDENTIALS"
+            }, 401)
             return err_response
 
         token_verified_result = self.db.verify_user(username, token)
         if not token_verified_result or token_verified_result == "NO_USER":
-            err_response = flask.make_response(
-                {'error': 'Invalid verification credentials'}, 401
-            )
+            err_response = flask.make_response({
+                'error': "User credentials are invalid.",
+                'ecode': "INVALID_CREDENTIALS"
+            })
             return err_response
+        
         if isinstance(token_verified_result, Exception):
             logging.error("[FLASK-VERIFY-USER]: Refer to [Database.verify_user] error logs for information")
             return flask.abort(500)
@@ -92,7 +93,7 @@ class Routes:
 
         username = headers.get('syncServer-Username')
         token = headers.get("syncServer-Token")
-
+        
         verify_result = self._verify_credentials(username, token)
         if verify_result != 0:
             return verify_result
@@ -137,7 +138,7 @@ class Routes:
             
             file.stream.seek(0)
             result = self.db.add_file(
-                username, token, file.name, 
+                username, file.name, 
                 file.stream
             )
             match result:
@@ -163,7 +164,10 @@ class Routes:
                         "[/upload]: add_file function returned unexpected data: '%s'",
                         result
                     )
-                    return flask.abort(500)
+                    return flask.make_response({
+                        'error': "Internal Server Error",
+                        'ecode': "SERVER_ERROR"
+                    }, 500)
         
         response = None
         match len(files):
@@ -206,7 +210,7 @@ class Routes:
 
         response_code = 200
 
-        for file in files.values():
+        for file in files.values(): 
             if not file.name:
                 return_name = f'unnamed-remote-[{file.filename}]-{secrets.randbelow(10**6)}'
                 failed_runs[return_name] = {
@@ -235,7 +239,7 @@ class Routes:
             
             file.stream.seek(0)
             result = self.db.modify_file(
-                username, token, file.name, 
+                username, file.name, 
                 file.stream
             )
             match result:
@@ -261,7 +265,10 @@ class Routes:
                         "[/modify]: modify_file function returned unexpected data: '%s'",
                         result
                     )
-                    return flask.abort(500)
+                    return flask.make_response({
+                        'error': "Internal Server Error",
+                        'ecode': "SERVER_ERROR"
+                    }, 500)
         
         response = None
         match len(files):
@@ -283,7 +290,13 @@ class Routes:
         return flask.make_response(response, response_code)
 
     def file_deletes(self):
-        body = request.form
+        if not request.is_json:
+            return flask.make_response({
+                'error': "Provided request must be in a JSON format",
+                'ecode': "415"
+            }, 415)
+        
+        data = request.json
         headers = request.headers
 
         username = headers.get('syncServer-Username')
@@ -293,48 +306,38 @@ class Routes:
         if verify_result != 0:
             return verify_result
 
-        if not body.get('file-paths'):
+        file_paths: list[str] = data.get('file-paths', None)
+        if file_paths is None:
             return flask.make_response({
                 'error': 'No file paths provided to read',
                 'ecode': 'MISSING_FILEPATHS'
             }, 400)
 
-        if not body.get('true-delete'):
+        true_delete: bool = data.get('true-delete', None)
+        if true_delete is None:
             return flask.make_response({
                 'error': "True delete parameter was not found",
                 'ecode': "MISSING_PARAMETER"
             }, 400)
         
-        true_delete = body['true-delete']
-        try:
-            true_del_var = int(true_delete)
-        except ValueError:
+        if true_delete not in [True, False]:
             return flask.make_response({
-                'error': "True delete parameter can only be int, and must be 0/1",
+                'error': "True delete parameter can only be bool",
                 'ecode': "INVALID_PARAMETER"
             }, 400)
         
-        if true_del_var not in [0, 1]:
+        if not isinstance(data['file-paths'], list):
             return flask.make_response({
-                'error': "True delete parameter can only be int, and must be 0/1",
-                'ecode': "INVALID_PARAMETER"
+                'error': "File paths can only be a list",
+                'ecode': "INVALID_CONTENT"
             }, 400)
         
-        try:
-            passed_filenames = json.loads(body['file-paths'])
-            filenames = [
-                str(item) for item in passed_filenames 
-                if isinstance(item, (str, bytes)) and
-                item
-            ]
-            # Code above makes a new list that gets the string version of the
-            # remote file paths only if the file path is bytes or string
-            # and if the item exists
-        except json.JSONDecodeError:
-            return flask.make_response({
-                'error': 'Could not parse JSON: Expected a list-like JSON string',
-                'ecode': "INVALID_JSON"
-            }, 400)
+        # Check each path in file-paths and filter out the ones that aren't 
+        # bytes or string, and isn't empty
+        filenames: list[str] = [
+            str(item) for item in data['file-paths'] 
+            if isinstance(item, (str, bytes)) and item
+        ]
         
         successful_runs = []
         failed_runs = {}
@@ -343,8 +346,8 @@ class Routes:
 
         for file in filenames:
             result = self.db.remove_file(
-                username, token, file,
-                permanent_delete=bool(true_del_var)
+                username, file,
+                permanent_delete=true_delete
             )
             match result:
                 case "NO_DIR_EXISTS":
@@ -369,7 +372,10 @@ class Routes:
                         "[/delete]: remove_file function returned unexpected data: '%s'",
                         result
                     )
-                    return flask.abort(500)
+                    return flask.make_response({
+                        'error': "Internal Server Error",
+                        'ecode': "SERVER_ERROR"
+                    }, 500)
         
         response = None
         match len(filenames):
@@ -397,7 +403,13 @@ class Routes:
         return flask.make_response(response, response_code)
 
     def file_restores(self):
-        body = request.form
+        if not request.is_json:
+            return flask.make_response({
+                'error': "Provided request must be in a JSON format",
+                'ecode': "415"
+            }, 415)
+        
+        data = request.json
         headers = request.headers
 
         username = headers.get('syncServer-Username')
@@ -407,34 +419,26 @@ class Routes:
         if verify_result != 0:
             return verify_result
 
-        if not body.get('file-path'):
+        file_path: str = data.get('file-path', None)
+        if file_path is None:
             return flask.make_response({
                 'error': 'No file path provided to restore',
                 'ecode': 'MISSING_FILEPATH'
             }, 400)
 
-        if not body.get('restore-which'):
+        restore_which: bool = data.get('restore-which', None)
+        if restore_which is None:
             return flask.make_response({
                 'error': "restore-which parameter was not found",
                 'ecode': "MISSING_PARAMETER"
             }, 400)
         
-        restore_which = body['restore-which']
-        try:
-            restore_which_var = int(restore_which)
-        except ValueError:
+        if restore_which not in [True, False]:
             return flask.make_response({
-                'error': "restore-which parameter can only be int",
+                'error': "restore-which parameter can only be bool",
                 'ecode': "INVALID_PARAMETER"
             }, 400)
         
-        if restore_which_var not in [0, 1]:
-            return flask.make_response({
-                'error': "True delete parameter can only be int, and must be 0/1",
-                'ecode': "INVALID_PARAMETER"
-            }, 400)
-
-        file_path = body['file-path']
         if not isinstance(file_path, (bytes, str)):
             return flask.make_response({
                 'error': 'file path provided is not bytes or str',
@@ -442,11 +446,11 @@ class Routes:
             }, 400)
         
         if file_path[0] != "/": 
-            file_path = "/" + file_path
+            file_path: str = "/" + file_path
         
         response_code = 200
         result = self.db.deleted_files.restore_file(
-            username, token, file_path, restore_which_var)
+            username, file_path, restore_which)
 
         match result:
             case 0:
@@ -489,12 +493,21 @@ class Routes:
                     "[/restore]: restore_file function returned unexpected data: '%s'",
                     result
                 )
-                return flask.abort(500)
+                return flask.make_response({
+                    'error': "Internal Server Error",
+                    'ecode': "SERVER_ERROR"
+                }, 500)
             
         return flask.make_response(response, response_code)
     
     def list_deleted(self):
-        body = request.form
+        if not request.is_json:
+            return flask.make_response({
+                'error': "Provided request must be in a JSON format",
+                'ecode': "415"
+            }, 415)
+        
+        data = request.json
         headers = request.headers
 
         username = headers.get('syncServer-Username')
@@ -504,13 +517,13 @@ class Routes:
         if verify_result != 0:
             return verify_result
 
-        if not body.get('file-path'):
+        file_path: str = data.get('file-path', None)
+        if file_path is None:
             return flask.make_response({
                 'error': 'No file path provided to read',
                 'ecode': 'MISSING_FILEPATH'
             }, 400)
 
-        file_path = body['file-path']
         if not isinstance(file_path, (bytes, str)):
             return flask.make_response({
                 'error': 'file path provided is not bytes or str',
@@ -518,17 +531,21 @@ class Routes:
             }, 400)
         
         if file_path != ":all:" and file_path[0] != "/":
-            file_path = "/" + file_path
+            file_path: str = "/" + file_path
         
         response_code = 200
         result = self.db.deleted_files.list_deleted(
-            username, token, file_path)
+            username, file_path)
         
         match result:
             case dict() if file_path == ":all:":
-                response = result
+                response = {
+                    'batch': True,
+                }
+                response.update(result)
             case list():
                 response = {
+                    'batch': False,
                     'success': True,
                     'delete-order': result
                 }
@@ -549,12 +566,21 @@ class Routes:
                     "[/list-deleted]: list_deleted function returned unexpected data: '%s'",
                     result
                 )
-                return flask.abort(500)
+                return flask.make_response({
+                    'error': "Internal Server Error",
+                    'ecode': "SERVER_ERROR"
+                }, 500)
         
         return flask.make_response(response, response_code)
     
     def remove_deleted(self):
-        body = request.form
+        if not request.is_json:
+            return flask.make_response({
+                'error': "Provided request must be in a JSON format",
+                'ecode': "415"
+            }, 415)
+        
+        data = request.json
         headers = request.headers
 
         username = headers.get('syncServer-Username')
@@ -564,27 +590,24 @@ class Routes:
         if verify_result != 0:
             return verify_result
 
-        if not body.get('file-path'):
+        file_path: bytes | str = data.get('file-path', None)
+        if file_path is None:
             return flask.make_response({
                 'error': 'No file path provided to delete',
                 'ecode': 'MISSING_FILEPATH'
             }, 400)
 
-        if not body.get('delete-which'):
+        delete_which: int = data.get('delete-which', None)
+        if delete_which is None:
             return flask.make_response({
-                'error': "True delete parameter was not found",
+                'error': "delete-which parameter was not found",
                 'ecode': "MISSING_PARAMETER"
             }, 400)
 
-        file_path = body['file-path']
-        true_delete = body['delete-which']
-        try:
-            if true_delete != "all":
-                # request.form turns int into a str
-                true_del_var = int(true_delete)
-        except ValueError:
+        # check if delete_which is 'all' or an int
+        if not (delete_which != "all" or isinstance(delete_which, int)):
             return flask.make_response({
-                'error': "True delete parameter can only be int, and must be 0/1",
+                'error': "delete-which parameter can only be int or 'all'",
                 'ecode': "INVALID_PARAMETER"
             }, 400)
 
@@ -593,17 +616,11 @@ class Routes:
                 'error': 'file path provided is not bytes or str',
                 'ecode': "INVALID_CONTENT"
             }, 400)
-        
-        if true_del_var not in [0, 1, 'all']:
-            return flask.make_response({
-                'error': "True delete parameter can only be int, and must be 0/1",
-                'ecode': "INVALID_PARAMETER"
-            }, 400)
 
         response_code = 200
         result = self.db.deleted_files.true_delete(
-            username, token, file_path,
-            delete_which=true_del_var
+            username, file_path,
+            delete_which=delete_which
         )
         match result:
             case 0:
@@ -640,12 +657,21 @@ class Routes:
                     "[/true-delete]: true_delete function returned unexpected data: '%s'",
                     result
                 )
-                return flask.abort(500)
+                return flask.make_response({
+                    'error': "Internal Server Error",
+                    'ecode': "SERVER_ERROR"
+                }, 500)
         
         return flask.make_response(response, response_code)
 
     def file_reads(self):
-        body = request.form
+        if not request.is_json:
+            return flask.make_response({
+                'error': "Provided request must be in a JSON format",
+                'ecode': "415"
+            }, 415)
+        
+        data = request.json
         headers = request.headers
 
         username = headers.get('syncServer-Username')
@@ -655,13 +681,13 @@ class Routes:
         if verify_result != 0:
             return verify_result
 
-        if not body.get('file-path'):
+        file_path: str = data.get('file-path', None)
+        if file_path is None:
             return flask.make_response({
                 'error': 'No file path provided to read',
                 'ecode': 'MISSING_FILEPATH'
             }, 400)
 
-        file_path = body['file-path']
         if not isinstance(file_path, (bytes, str)):
             return flask.make_response({
                 'error': 'file path provided is not bytes or str',
@@ -669,9 +695,9 @@ class Routes:
             }, 400)
         
         if file_path[0] != "/": 
-            file_path = "/" + file_path
+            file_path: str = "/" + file_path
 
-        result = self.db.read_file(username, token, file_path)
+        result = self.db.read_file(username, file_path)
         response = None
 
         match result:
@@ -691,7 +717,7 @@ class Routes:
                 }
                 response_code = 404
             case _ if isinstance(result, types.GeneratorType):
-                response = flask.Response(
+                response: flask.Response = flask.Response(
                     result, status=200,
                     direct_passthrough=True
                 )
@@ -704,12 +730,21 @@ class Routes:
                     "[/read]: remove_file function returned unexpected data: '%s'",
                     result
                 )
-                return flask.abort(500)
+                return flask.make_response({
+                    'error': "Internal Server Error",
+                    'ecode': "SERVER_ERROR"
+                }, 500)
          
         return response or flask.make_response(flask.jsonify(err_response), response_code)
     
     def dir_creations(self):
-        body = request.form
+        if not request.is_json:
+            return flask.make_response({
+                'error': "Provided request must be in a JSON format",
+                'ecode': "415"
+            }, 415)
+        
+        data = request.json
         headers = request.headers
 
         username = headers.get('syncServer-Username')
@@ -719,13 +754,13 @@ class Routes:
         if verify_result != 0:
             return verify_result
 
-        if not body.get('dir-path'):
+        dir_path: str = data.get('dir-path', None)
+        if dir_path is None:
             return flask.make_response({
                 'error': 'No directory path provided to create',
                 'ecode': 'MISSING_DIRPATH'
             }, 400)
         
-        dir_path = body.get('dir-path')
         if not isinstance(dir_path, (bytes, str)):
             return flask.make_response({
                 'error': "Directory path provided is not bytes or string",
@@ -733,7 +768,7 @@ class Routes:
             }, 400)
         
         result = self.db.make_dir(
-            username, token, dir_path
+            username, dir_path
         )
 
         response_code = 200
@@ -763,12 +798,21 @@ class Routes:
                     "'self.db.make_dir' returned unexpected data: '%s'",
                     result
                 )
-                return flask.abort(500)
-
+                return flask.make_response({
+                    'error': "Internal Server Error",
+                    'ecode': "SERVER_ERROR"
+                }, 500)
+            
         return flask.make_response(response, response_code)
     
     def dir_deletions(self):
-        body = request.form
+        if not request.is_json:
+            return flask.make_response({
+                'error': "Provided request must be in a JSON format",
+                'ecode': "415"
+            }, 415)
+        
+        data = request.json
         headers = request.headers
 
         username = headers.get('syncServer-Username')
@@ -778,13 +822,13 @@ class Routes:
         if verify_result != 0:
             return verify_result
 
-        if not body.get('dir-path'):
+        dir_path: str = data.get('dir-path', None)
+        if dir_path is None:
             return flask.make_response({
-                'error': 'No directory path provided to delete',
+                'error': 'No directory path provided to create',
                 'ecode': 'MISSING_DIRPATH'
             }, 400)
         
-        dir_path = body.get('dir-path')
         if not isinstance(dir_path, (bytes, str)):
             return flask.make_response({
                 'error': "Directory path provided is not bytes or string",
@@ -792,7 +836,7 @@ class Routes:
             }, 400)
         
         result = self.db.remove_dir(
-            username, token, dir_path
+            username, dir_path
         )
 
         response_code = 200
@@ -822,12 +866,21 @@ class Routes:
                     "'self.db.remove_dir' returned unexpected data: '%s'",
                     result
                 )
-                return flask.abort(500)
+                return flask.make_response({
+                    'error': "Internal Server Error",
+                    'ecode': "SERVER_ERROR"
+                }, 500)
 
         return flask.make_response(response, response_code)
     
     def dir_listing(self):
-        body = request.form
+        if not request.is_json:
+            return flask.make_response({
+                'error': "Provided request must be in a JSON format",
+                'ecode': "415"
+            }, 415)
+        
+        data = request.json
         headers = request.headers
 
         username = headers.get('syncServer-Username')
@@ -837,21 +890,21 @@ class Routes:
         if verify_result != 0:
             return verify_result
 
-        if not body.get('dir-path'):
+        dir_path: str = data.get('dir-path', None)
+        if dir_path is None:
             return flask.make_response({
-                'error': 'No directory path provided to list',
+                'error': 'No directory path provided to create',
                 'ecode': 'MISSING_DIRPATH'
             }, 400)
         
-        dir_path = body.get('dir-path')
         if not isinstance(dir_path, (bytes, str)):
             return flask.make_response({
                 'error': "Directory path provided is not bytes or string",
                 'ecode': "INVALID_CONTENT"
             }, 400)
         
-        result = self.db.list_dir(
-            username, token, dir_path
+        result: str | list[str] = self.db.list_dir(
+            username, dir_path
         )
 
         response_code = 200
@@ -878,7 +931,10 @@ class Routes:
                     "'self.db.list_dir' returned unexpected data: '%s'",
                     result
                 )
-                return flask.abort(500)
+                return flask.make_response({
+                    'error': "Internal Server Error",
+                    'ecode': "SERVER_ERROR"
+                }, 500)
 
         return flask.make_response(flask.jsonify(response), response_code)
     
@@ -887,12 +943,12 @@ class Routes:
         return flask.jsonify({'alive': True})
 
 def main():
-    db_password = getpass.getpass(
+    db_password: str = getpass.getpass(
         "Enter database password [or empty if not protected]: ")
     
-    flask_route_port = os.environ.get('SYNCSERVER_PORT', 8561)
+    flask_route_port: int = os.environ.get('SYNCSERVER_PORT', 8561)
 
-    routes = Routes(db_password=db_password)
+    routes: Routes = Routes(db_password=db_password)
     logging.basicConfig(
         level=logging.DEBUG,
         format='[%(asctime)s] - [%(levelname)s] - %(message)s',

@@ -1,20 +1,24 @@
-## New Features and Overhaul
+## Changes to API
 **Changes:**
 * **`server/__main__.py`**:
-    * Added the `/restore`, `/list-deleted` and `/true-delete` routes.
-    * Planning to add support for API tokens.
-    * Added some type handling to prevent errors.
+    * Changed all APIs to accept JSON, except for `/upload` and `/modify` as those are file upload APIs.
+    * Replaced some `flask.abort(500)` calls with a `make_response` call that returns generic JSON and a 500 status code.
+    * Will work on adding API token support.
 * **`server/_db.py`**:
-    * Added new parameter to `delete_file` called `permanent_delete`, as the default is now marking files as deleted.
-    * Planning to remove the `token` parameter in the methods.
-    * Also planning to move directory methods into another class.
+    * Changed all methods and removed the `token` parameter for all file/directory operations.
+    * Planning to update documentation.
 * **`client/interface.py`**:
-    * Added methods to handle deleted files for the client: `list_deleted`, `restore` and `remove_deleted`.
+    * Changed methods to request as JSON compared to a form-data POST.
 
 **Additions:**
-* **`server`**:
-    * Added support to mark files as deleted.
-    * Added `DeletedFiles` class to handle deleted files.
-
-**Other:**
-* Planning to release v1.1 when all is ready.
+* **`server/__main__.py`**:
+    * Added better handling when checking for parameter existence, to prevent re-defining the same variable.
+    * Added type annotations to some variables.
+    * Added a check at the start of functions that checks if it's a JSON request, and returns a 415 with a JSON message.
+* **`server/_db.py`**:
+    * Added type annotations and function return annotations.
+* **`client/interface.py`**:
+    * Added methods to handle deleted files.
+    * Added type annotations and function return annotations.
+    * Added `endpoint` parameter to `FileInterface.upload`, allowing you specify the route.
+    The default is `/upload` if `modify_remote` is false, or `/modify`.

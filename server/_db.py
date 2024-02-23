@@ -40,7 +40,7 @@ import msgpack
 from pycrypter import CipherManager  # newguy103-pycrypter
 from typing import BinaryIO, Generator, Literal, TextIO, Union
 
-__version__ = "1.0.0"
+__version__: str = "1.0.0"
 
 class FileDatabase:
     """
@@ -65,7 +65,10 @@ class FileDatabase:
     - More methods are available for user management, file operations, and directory management.
     """
 
-    def __init__(self, db_path='./syncServer.db', db_password=b''):
+    def __init__(
+            self, db_path: str = './syncServer.db', 
+            db_password: bytes | str = b''
+    ) -> None:
         self.db: sqlite3.Connection = sqlite3.connect(db_path, check_same_thread=False)
         self.cursor: sqlite3.Cursor = self.db.cursor()
 
@@ -215,13 +218,13 @@ class FileDatabase:
         else:
             config_secrets = msgpack.unpackb(config[0])
         
-        self.conf_secrets = config_secrets
-        self.conf_vars = config_vars
+        self.conf_secrets: dict = config_secrets
+        self.conf_vars: dict = config_vars
 
-        self._cipher_key = db_password
-        self.cipher_conf = config_secrets['encryption_config']
+        self._cipher_key: bytes | str = db_password
+        self.cipher_conf: dict = config_secrets['encryption_config']
 
-        self.deleted_files = DeletedFiles(self)
+        self.deleted_files: DeletedFiles = DeletedFiles(self)
 
     def set_protection(
             self, set_protection: bool,
@@ -229,7 +232,7 @@ class FileDatabase:
 
             hash_pepper: bytes = b'',
             password_pepper: bytes = b''
-    ):
+    ) -> None:
         """
         Set or unset protection for the database, including encryption.
 
@@ -302,7 +305,7 @@ class FileDatabase:
 
         return
 
-    def verify_user(self, username: str, token: str) -> Union[str, bool]:
+    def verify_user(self, username: str, token: str) -> str | bool:
         """
         Verify the authenticity of a user's authentication token.
 
@@ -311,11 +314,10 @@ class FileDatabase:
         - token (str): The authentication token to be verified.
 
         Returns:
-        - Union[str, bool]: Returns one of the following:
-          - True: If the user is verified successfully.
-          - "NO_USER": If the specified username is not found in the database.
-          - False: If the verification process fails, indicating an incorrect token.
-          - Exception: If an unexpected exception occurs during the verification process.
+        - True: If the user is verified successfully.
+        - "NO_USER": If the specified username is not found in the database.
+        - False: If the verification process fails, indicating an incorrect token.
+        - Exception: If an unexpected exception occurs during the verification process.
 
         Notes:
         - Retrieves the stored token for the given username from the database.
@@ -346,7 +348,7 @@ class FileDatabase:
 
         return True
 
-    def add_user(self, username: str, token: str) -> Union[str, int]:
+    def add_user(self, username: str, token: str) -> Literal['USER_EXISTS', 0]:
         """
         Add a new user to the database with the specified username and authentication token.
 
@@ -355,9 +357,8 @@ class FileDatabase:
         - token (str): The authentication token associated with the new user.
 
         Returns:
-        - Union[str, int]: Returns one of the following:
-          - 0: If the user is successfully added to the database.
-          - "USER_EXISTS": If a user with the specified username already exists.
+        - 0: If the user is successfully added to the database.
+        - "USER_EXISTS": If a user with the specified username already exists.
 
         Notes:
         - Checks if a user with the given username already exists in the database.
@@ -391,19 +392,16 @@ class FileDatabase:
 
         return 0
 
-    def remove_user(self, username: str, token: str) -> Union[str, int]:
+    def remove_user(self, username: str) -> Literal["NO_USER"] | int:
         """
-        Remove a user from the database based on the specified username and authentication token.
+        Remove a user from the database based on the specified username.
 
         Parameters:
         - username (str): The username of the user to be removed.
-        - token (str): The authentication token associated with the user.
 
         Returns:
-        - Union[str, int]: Returns one of the following:
-          - 0: If the user is successfully removed from the database.
-          - "NO_USER": If the specified username is not found in the database.
-          - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
+        - 0: If the user is successfully removed from the database.
+        - "NO_USER": If the specified username is not found in the database.
 
         Notes:
         - Retrieves the stored user ID and hashed token for the given username from the database.
@@ -422,16 +420,6 @@ class FileDatabase:
         if not db_result:
             return "NO_USER"
 
-        hashed_pw = db_result[0]
-        
-        try:
-            self.pw_hasher.verify(hashed_pw, token)
-        except (argon2.exceptions.VerifyMismatchError, argon2.exceptions.VerificationError):
-            return "INVALID_TOKEN"
-        except Exception as exc:
-            logging.error("[remove_user]: Verifying user hash failed: '%s'", exc)
-            return exc
-
         # irreversible delete
         with self.db:
             self.cursor.execute("""
@@ -440,7 +428,7 @@ class FileDatabase:
             """, [username])
         return 0
     
-    def dir_checker(self, file_path: str, user_id: str) -> Union[str, tuple[str]]:
+    def dir_checker(self, file_path: str, user_id: str) -> Literal["NO_USER"] | tuple[str]:
         """
         Check the existence of the directory associated with a given file path for a specific user.
 
@@ -449,14 +437,13 @@ class FileDatabase:
         - user_id (str): The user ID associated with the directory.
 
         Returns:
-        - Union[str, Tuple[str]]: Returns one of the following:
-          - Tuple[str]: If the directory exists, returns a tuple containing the directory ID.
-          - "NO_USER": If the specified user ID is not found in the database.
+        - Tuple[str]: If the directory exists, returns a tuple containing the directory ID.
+        - "NO_USER": If the specified user ID is not found in the database.
 
         Raises:
         - TypeError: If 'file_path' is not of type bytes or str.
         - ValueError: If 'file_path' is not passed in the arguments.
-
+        
         Notes:
         - Checks if 'file_path' is a valid type (bytes or str).
         - Raises a TypeError if 'file_path' is not of the expected type.
@@ -497,29 +484,27 @@ class FileDatabase:
     
     def add_file(
             self, username: str,
-            token: str, file_path: bytes | str,
+            file_path: bytes | str,
 
             file_stream: BinaryIO | TextIO,
             chunk_size: int = 50 * 1024 * 1024
-    ) -> Union[str, int]:
+    ) -> int | str:
         """
         Add a file to the database for a specific user.
 
         Parameters:
         - username (str): The username of the user adding the file.
-        - token (str): The authentication token associated with the user.
         - file_path (bytes or str): The path of the file to be added.
         - file_stream (BinaryIO or TextIO): The file stream to read the file content.
         - chunk_size (int, optional): The size of each chunk when reading the file stream.
           Default is 50 MB.
 
         Returns:
-        - Union[str, int]: Returns one of the following:
-          - 0: If the file is successfully added to the database.
-          - "NO_USER": If the specified username is not found in the database.
-          - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
-          - "NO_DIR_EXISTS": If the directory for the file does not exist for the specified user.
-          - "FILE_EXISTS": If a file with the same name already exists in the specified directory.
+        - 0: If the file is successfully added to the database.
+        - "NO_USER": If the specified username is not found in the database.
+        - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
+        - "NO_DIR_EXISTS": If the directory for the file does not exist for the specified user.
+        - "FILE_EXISTS": If a file with the same name already exists in the specified directory.
 
         Raises:
         - TypeError: If 'file_path' is not of type bytes or str.
@@ -552,12 +537,6 @@ class FileDatabase:
             return "NO_USER"
 
         user_id = user_data[0]
-        token_verified = self.verify_user(username, token)
-        
-        if not token_verified:
-            return "INVALID_TOKEN"
-        if isinstance(token_verified, Exception):
-            return token_verified
 
         first_chunk = file_stream.read(chunk_size)
         if not first_chunk:
@@ -636,29 +615,27 @@ class FileDatabase:
 
     def modify_file(
             self, username: str,
-            token: str, file_path: bytes | str,
+            file_path: bytes | str,
 
             file_stream: BinaryIO | TextIO,
             chunk_size: int = 50 * 1024 * 1024
-    ) -> Union[str, int]:
+    ) -> int | str:
         """
         Modify an existing file in the database for a specific user.
 
         Parameters:
         - username (str): The username of the user modifying the file.
-        - token (str): The authentication token associated with the user.
         - file_path (bytes or str): The path of the file to be modified.
         - file_stream (BinaryIO or TextIO): The file stream to read the modified file content.
         - chunk_size (int, optional): The size of each chunk when reading the file stream.
           Default is 50 MB.
 
         Returns:
-        - Union[str, int]: Returns one of the following:
-          - 0: If the file is successfully modified in the database.
-          - "NO_USER": If the specified username is not found in the database.
-          - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
-          - "NO_DIR_EXISTS": If the directory for the file does not exist for the specified user.
-          - "NO_FILE_EXISTS": If the specified file does not exist in the specified directory.
+        - 0: If the file is successfully modified in the database.
+        - "NO_USER": If the specified username is not found in the database.
+        - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
+        - "NO_DIR_EXISTS": If the directory for the file does not exist for the specified user.
+        - "NO_FILE_EXISTS": If the specified file does not exist in the specified directory.
 
         Raises:
         - TypeError: If 'file_path' is not of type bytes or str.
@@ -691,12 +668,6 @@ class FileDatabase:
             return "NO_USER"
 
         user_id = user_data[0]
-        token_verified = self.verify_user(username, token)
-        
-        if not token_verified:
-            return "INVALID_TOKEN"
-        if isinstance(token_verified, Exception):
-            return token_verified
 
         first_chunk = file_stream.read(chunk_size)
         if not first_chunk:
@@ -783,25 +754,23 @@ class FileDatabase:
 
     def remove_file(
             self, username: str,
-            token: str, file_path: bytes | str,
+            file_path: bytes | str,
 
             permanent_delete: bool = False
-    ) -> Union[str, int]:
+    ) -> int | str:
         """
         Remove an existing file from the database for a specific user.
 
         Parameters:
         - username (str): The username of the user removing the file.
-        - token (str): The authentication token associated with the user.
         - file_path (bytes or str): The path of the file to be removed.
 
         Returns:
-        - Union[str, int]: Returns one of the following:
-          - 0: If the file is successfully removed from the database.
-          - "NO_USER": If the specified username is not found in the database.
-          - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
-          - "NO_DIR_EXISTS": If the directory for the file does not exist for the specified user.
-          - "NO_FILE_EXISTS": If the specified file does not exist in the specified directory.
+        - 0: If the file is successfully removed from the database.
+        - "NO_USER": If the specified username is not found in the database.
+        - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
+        - "NO_DIR_EXISTS": If the directory for the file does not exist for the specified user.
+        - "NO_FILE_EXISTS": If the specified file does not exist in the specified directory.
 
         Raises:
         - TypeError: If 'file_path' is not of type bytes or str.
@@ -828,12 +797,6 @@ class FileDatabase:
             return "NO_USER"
 
         user_id = user_data[0]
-        token_verified = self.verify_user(username, token)
-        
-        if not token_verified:
-            return "INVALID_TOKEN"
-        if isinstance(token_verified, Exception):
-            return token_verified
         
         dir_exists = self.dir_checker(file_path, user_id)
         if not dir_exists:
@@ -887,9 +850,9 @@ class FileDatabase:
 
     def read_file(
             self, username: str,
-            token: str, file_path: bytes | str,
+            file_path: bytes | str,
             chunk_size: int = 50 * 1024 * 1024
-    ) -> Union[str, Generator[bytes, None, None]]:
+    ) -> str | Generator[bytes, None, None]:
         """
         Read the content of an existing file from the database for a specific user.
 
@@ -901,12 +864,11 @@ class FileDatabase:
           Default is 50 MB.
 
         Returns:
-        - Union[str, Generator[bytes, None, None]]: Returns one of the following:
-          - Generator[bytes, None, None]: A generator yielding file content in chunks.
-          - "NO_USER": If the specified username is not found in the database.
-          - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
-          - "NO_DIR_EXISTS": If the directory for the file does not exist for the specified user.
-          - "NO_FILE_EXISTS": If the specified file does not exist in the specified directory.
+        -  Generator[bytes, None, None]: A generator yielding file content in chunks.
+        - "NO_USER": If the specified username is not found in the database.
+        - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
+        - "NO_DIR_EXISTS": If the directory for the file does not exist for the specified user.
+        - "NO_FILE_EXISTS": If the specified file does not exist in the specified directory.
 
         Raises:
         - TypeError: If 'file_path' is not of type bytes or str.
@@ -939,12 +901,6 @@ class FileDatabase:
             return "NO_USER"
 
         user_id = user_data[0]
-        token_verified = self.verify_user(username, token)
-        
-        if not token_verified:
-            return "INVALID_TOKEN"
-        if isinstance(token_verified, Exception):
-            return token_verified
         
         dir_exists = self.dir_checker(file_path, user_id)
         if not dir_exists:
@@ -1024,25 +980,22 @@ class FileDatabase:
     
     def make_dir(
             self, username: str,
-            token: str,
             dir_path: str
-    ) -> Union[str, int]:
+    ) -> int | str:
         """
         Create a new directory in the database for a specific user.
 
         Parameters:
         - username (str): The username of the user creating the directory.
-        - token (str): The authentication token associated with the user.
         - dir_path (str): The path of the directory to be created.
 
         Returns:
-        - Union[str, int]: Returns one of the following:
-          - 0: If the directory is successfully created in the database.
-          - "NO_USER": If the specified username is not found in the database.
-          - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
-          - "DIR_EXISTS": If the specified directory already exists for the specified user.
-          - "MISSING_PATH": If the 'dir_path' is empty.
-          - "INVALID_DIR_PATH": If the 'dir_path' is not a valid directory path.
+        - 0: If the directory is successfully created in the database.
+        - "NO_USER": If the specified username is not found in the database.
+        - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
+        - "DIR_EXISTS": If the specified directory already exists for the specified user.
+        - "MISSING_PATH": If the 'dir_path' is empty.
+        - "INVALID_DIR_PATH": If the 'dir_path' is not a valid directory path.
 
         Raises:
         - TypeError: If 'dir_path' is not of type bytes or str.
@@ -1070,13 +1023,6 @@ class FileDatabase:
             return "NO_USER"
         
         user_id = user_data[0]
-        token_verified = self.verify_user(username, token)
-        
-        if not token_verified:
-            return "INVALID_TOKEN"
-        if isinstance(token_verified, Exception):
-            return token_verified
-        
         self.cursor.execute("""
             SELECT dir_id FROM directories
             WHERE dir_name=? AND user_id=?
@@ -1111,25 +1057,22 @@ class FileDatabase:
 
     def remove_dir(
             self, username: str,
-            token: str,
             dir_path: str
-    ) -> Union[str, int]:
+    ) -> int | str:
         """
         Remove an existing directory and its contents from the database for a specific user.
 
         Parameters:
         - username (str): The username of the user removing the directory.
-        - token (str): The authentication token associated with the user.
         - dir_path (str): The path of the directory to be removed.
 
         Returns:
-        - Union[str, int]: Returns one of the following:
-          - 0: If the directory and its contents are successfully removed from the database.
-          - "NO_USER": If the specified username is not found in the database.
-          - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
-          - "NO_DIR_EXISTS": If the specified directory does not exist for the specified user.
-          - "ROOT_DIR": If attempting to remove the root directory.
-          - "INVALID_DIR_PATH": If the 'dir_path' is not a valid directory path.
+        - 0: If the directory and its contents are successfully removed from the database.
+        - "NO_USER": If the specified username is not found in the database.
+        - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
+        - "NO_DIR_EXISTS": If the specified directory does not exist for the specified user.
+        - "ROOT_DIR": If attempting to remove the root directory.
+        - "INVALID_DIR_PATH": If the 'dir_path' is not a valid directory path.
 
         Raises:
         - TypeError: If 'dir_path' is not of type bytes or str.
@@ -1156,13 +1099,6 @@ class FileDatabase:
             return "NO_USER"
         
         user_id = user_data[0]
-        token_verified = self.verify_user(username, token)
-        
-        if not token_verified:
-            return "INVALID_TOKEN"
-        if isinstance(token_verified, Exception):
-            return token_verified
-        
         self.cursor.execute("""
             SELECT dir_id FROM directories
             WHERE dir_name=? AND user_id=?
@@ -1194,24 +1130,21 @@ class FileDatabase:
 
     def list_dir(
             self, username: str,
-            token: str, 
             dir_path: str
-    ) -> Union[str, list[str]]:
+    ) -> str | list[str]:
         """
         List the files in a specific directory for a given user.
 
         Parameters:
         - username (str): The username of the user listing the directory.
-        - token (str): The authentication token associated with the user.
         - dir_path (str): The path of the directory to be listed.
 
         Returns:
-        - Union[str, List[str]]: Returns one of the following:
-          - List[str]: A list of filenames in the specified directory.
-          - "NO_USER": If the specified username is not found in the database.
-          - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
-          - "NO_DIR_EXISTS": If the specified directory does not exist for the specified user.
-          - "INVALID_DIR_PATH": If the 'dir_path' is not a valid directory path.
+        - List[str]: A list of filenames in the specified directory.
+        - "NO_USER": If the specified username is not found in the database.
+        - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
+        - "NO_DIR_EXISTS": If the specified directory does not exist for the specified user.
+        - "INVALID_DIR_PATH": If the 'dir_path' is not a valid directory path.
 
         Raises:
         - TypeError: If 'dir_path' is not of type bytes or str.
@@ -1238,13 +1171,6 @@ class FileDatabase:
             return "NO_USER"
         
         user_id = user_data[0]
-        token_verified = self.verify_user(username, token)
-        
-        if not token_verified:
-            return "INVALID_TOKEN"
-        if isinstance(token_verified, Exception):
-            return token_verified
-        
         self.cursor.execute("""
             SELECT dir_id FROM directories
             WHERE dir_name=? AND user_id=?
@@ -1277,7 +1203,7 @@ class FileDatabase:
         
 
 class DeletedFiles(FileDatabase):
-    def __init__(self, parent: FileDatabase):
+    def __init__(self, parent: FileDatabase) -> None:
         self.db: sqlite3.Connection = parent.db
         self.cursor: sqlite3.Cursor = parent.cursor
 
@@ -1292,8 +1218,8 @@ class DeletedFiles(FileDatabase):
     
     def list_deleted(
             self, username: str,
-            token: str, file_path: bytes | str
-    ) -> str | list:
+            file_path: bytes | str
+    ) -> str | list[str] | dict:
         if not isinstance(file_path, (bytes, str)):
             raise TypeError("'file_path' must be bytes or str")
 
@@ -1306,12 +1232,6 @@ class DeletedFiles(FileDatabase):
             return "NO_USER"
 
         user_id = user_data[0]
-        token_verified = self.verify_user(username, token)
-
-        if not token_verified:
-            return "INVALID_TOKEN"
-        if isinstance(token_verified, Exception):
-            return token_verified
 
         if file_path == ":all:":
             self.cursor.execute("""
@@ -1320,7 +1240,7 @@ class DeletedFiles(FileDatabase):
             """, [user_id])
             file_ids = self.cursor.fetchall()
 
-            grouped_data = {}
+            grouped_data: dict[str, list] = {}
             for item in file_ids:
                 filename, data_id = item
                 if filename in grouped_data:
@@ -1330,7 +1250,7 @@ class DeletedFiles(FileDatabase):
 
             # Convert dictionary values to lists of tuples
             result = [[(key, val) for val in grouped_data[key]] for key in grouped_data]
-            all_results = {}
+            all_results: dict = {}
 
             for path_and_id_tuple in result:
                 for file_path, file_id in path_and_id_tuple:
@@ -1386,7 +1306,7 @@ class DeletedFiles(FileDatabase):
 
     def restore_file(
             self, username: str,
-            token: str, file_path: bytes | str,
+            file_path: bytes | str,
             restore_which: int = None
     ) -> str | int:
         if not isinstance(file_path, (bytes, str)):
@@ -1406,12 +1326,6 @@ class DeletedFiles(FileDatabase):
             return "NO_USER"
 
         user_id = user_data[0]
-        token_verified = self.verify_user(username, token)
-
-        if not token_verified:
-            return "INVALID_TOKEN"
-        if isinstance(token_verified, Exception):
-            return token_verified
 
         dir_exists = self.dir_checker(file_path, user_id)
         if not dir_exists:
@@ -1479,9 +1393,9 @@ class DeletedFiles(FileDatabase):
     
     def true_delete(
             self, username: str,
-            token: str, file_path: bytes | str,
+            file_path: bytes | str,
             delete_which: int | Literal['all'] = 0
-    ) -> str | list:
+    ) -> str | int:
         if not isinstance(file_path, (bytes, str)):
             raise TypeError("'file_path' must be bytes or str")
 
@@ -1496,15 +1410,8 @@ class DeletedFiles(FileDatabase):
         if not user_data:
             return "NO_USER"
 
-        user_id = user_data[0]
-        token_verified = self.verify_user(username, token)
-
-        if not token_verified:
-            return "INVALID_TOKEN"
-        if isinstance(token_verified, Exception):
-            return token_verified
-
-        dir_exists = self.dir_checker(file_path, user_id)
+        user_id: str = user_data[0]
+        dir_exists: tuple[str] = self.dir_checker(file_path, user_id)
         if not dir_exists:
             return "NO_DIR_EXISTS"
 
