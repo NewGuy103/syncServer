@@ -420,6 +420,12 @@ class FileDatabase:
         - Returns 0 upon successful addition of the new user to the database.
         """
 
+        blacklisted_names = {
+            'INVALID_APIKEY', 'APIKEY_NOT_AUTHORIZED', 'NO_USER',
+        }
+        if username in blacklisted_names:
+            raise ValueError('cannot use blacklisted username')
+        
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
         """, [username])

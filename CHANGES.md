@@ -20,6 +20,7 @@
     * Added `APIKeyInterface` class designed to be initialized by `FileDatabase` to support API keys.
     * Added a simple command line interface that allows you to edit the configuration for the database.
     It can be accessed with `syncserver.server --edit-config`.
+    * Added simple username blacklist in `add_user` to prevent unexpected behaviour within the API.
 * **`client/__init__.py`**:
     * Added `APIKeyInterface` to import and `__all__`.
 * **`client/interface.py`**:
