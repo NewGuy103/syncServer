@@ -26,10 +26,15 @@ Note:
   and user authentication in a secure and encrypted manner.
 """
 
+import argparse
+import ast
 import sqlite3
-import types
-import uuid
 
+import subprocess
+import tempfile
+import types
+
+import uuid
 import secrets
 import logging
 
@@ -38,9 +43,11 @@ import cryptography
 import msgpack
 
 from pycrypter import CipherManager  # newguy103-pycrypter
-from typing import BinaryIO, Generator, Literal, TextIO, Union
+from datetime import datetime, timedelta
+from typing import BinaryIO, Callable, Generator, Literal, TextIO
 
-__version__: str = "1.0.0"
+__version__: str = "1.1.0"
+
 
 class FileDatabase:
     """
@@ -84,6 +91,19 @@ class FileDatabase:
                 token TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS user_apikeys (
+                key_id TEXT PRIMARY KEY,
+                user_id TEXT,
+                
+                key_name TEXT,
+                api_key TEXT,
+                
+                key_perms BLOB,
+                expiry_date DATETIME,
+                
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+                    ON DELETE CASCADE
+            );
             CREATE TABLE IF NOT EXISTS files (
                 data_id TEXT PRIMARY KEY,
                 dir_id TEXT,
@@ -118,7 +138,11 @@ class FileDatabase:
                 data_id TEXT,
                 
                 old_filepath TEXT,
-                delete_date TIMESTAMP DEFAULT (datetime('now', 'localtime') || '.' || strftime('%f', 'now', 'localtime')),
+                delete_date TIMESTAMP DEFAULT (
+                    datetime('now', 'localtime')  
+                    || '.' 
+                    || strftime('%f', 'now', 'localtime')
+                ),
                 
                 FOREIGN KEY (data_id) REFERENCES files(data_id)
                     ON DELETE CASCADE
@@ -150,9 +174,9 @@ class FileDatabase:
         Note:
         - The method retrieves and decrypts configuration data from the 'config' table.
         - If the configuration data is not present, default values are used and stored in the 'config' table.
-        - The 'syncServer-protected' configuration variable determines whether the database is password-protected.
+        - The 'syncServer-protected' configuration variable determines whether the database is key-protected.
         - If protected, the provided database password is used for decryption.
-        - The decrypted configuration data is stored in 'conf_secrets', 'conf_vars', and 'cipher_conf' attributes.
+        - The decrypted config data is stored in 'conf_secrets', 'conf_vars', and 'cipher_conf' attributes.
         """
 
         self.cursor.execute("""
@@ -209,7 +233,7 @@ class FileDatabase:
                     config_secrets, password=db_password
                 )
                 config_secrets = msgpack.unpackb(msgpack_secrets)
-            except cryptography.fernet.InvalidToken: # type: ignore
+            except cryptography.fernet.InvalidToken:  # type: ignore
                 raise RuntimeError(
                     "could not decrypt config_data, either incorrect password or not encrypted, "
                     "if the original key was lost, decrypt the 'syncServer-recoveryKey' entry  "
@@ -225,6 +249,7 @@ class FileDatabase:
         self.cipher_conf: dict = config_secrets['encryption_config']
 
         self.deleted_files: DeletedFiles = DeletedFiles(self)
+        self.api_keys: APIKeyInterface = APIKeyInterface(self)
 
     def set_protection(
             self, set_protection: bool,
@@ -304,6 +329,33 @@ class FileDatabase:
             file.write(recovery_key)
 
         return
+
+    def save_conf(self, secrets: dict = None, _vars: dict = None) -> None:
+        if not secrets:
+            pass
+        elif self.conf_vars['syncServer-protected']:
+            conf_secrets: bytes = self.cipher_mgr.fernet.encrypt_data(
+                msgpack.packb(secrets), password=self._cipher_key
+            )
+        else:
+            conf_secrets: bytes = msgpack.packb(secrets)
+        
+        with self.db:
+            if secrets:
+                self.cursor.execute("""
+                    UPDATE config
+                    SET config_data=?
+                    WHERE config_id='main'
+                """, [conf_secrets])
+            
+            if _vars:
+                self.cursor.execute("""
+                    UPDATE config
+                    SET config_vars=?
+                    WHERE config_id='main'
+                """, [msgpack.packb(_vars)])
+        
+        return 0
 
     def verify_user(self, username: str, token: str) -> str | bool:
         """
@@ -387,7 +439,7 @@ class FileDatabase:
             """, [user_id, username, hashed_pw])
             self.cursor.execute("""
                 INSERT INTO directories (dir_id, user_id, dir_name)
-                VALUES (?, ?, '/')                
+                VALUES (?, ?, '/')
             """, [dir_id, user_id])
 
         return 0
@@ -1202,7 +1254,7 @@ class FileDatabase:
         return files
         
 
-class DeletedFiles(FileDatabase):
+class DeletedFiles:
     def __init__(self, parent: FileDatabase) -> None:
         self.db: sqlite3.Connection = parent.db
         self.cursor: sqlite3.Cursor = parent.cursor
@@ -1215,6 +1267,8 @@ class DeletedFiles(FileDatabase):
 
         self._cipher_key: bytes | str = parent._cipher_key
         self.cipher_conf: dict = self.conf_secrets['encryption_config']
+
+        self.dir_checker: Callable = parent.dir_checker
     
     def list_deleted(
             self, username: str,
@@ -1461,11 +1515,11 @@ class DeletedFiles(FileDatabase):
 
         if delete_which == "all":
             with self.db:
-                for fileid_to_delete in delete_data:
+                for file_id_to_delete in delete_data:
                     self.cursor.execute("""
                         DELETE FROM files
                         WHERE data_id=?
-                    """, [fileid_to_delete])
+                    """, [file_id_to_delete])
         else:
             with self.db:
                 delete_which_id = delete_data[delete_which]
@@ -1476,8 +1530,353 @@ class DeletedFiles(FileDatabase):
         
         return 0
 
+
+class APIKeyInterface:
+    def __init__(self, parent: FileDatabase) -> None:
+        self.db: sqlite3.Connection = parent.db
+        self.cursor: sqlite3.Cursor = parent.cursor
+
+        self.pw_hasher: argon2.PasswordHasher = parent.pw_hasher
+        self.cipher_mgr: CipherManager = parent.cipher_mgr
+
+        self.conf_secrets: dict = parent.conf_secrets
+        self.conf_vars: dict = parent.conf_vars
+
+        self._cipher_key: bytes | str = parent._cipher_key
+        self.cipher_conf: dict = self.conf_secrets['encryption_config']
+
+        self.perms_list: list[str] = ['create', 'read', 'update', 'delete']
+    
+    def _hash_key(self, api_key: str) -> str:
+        if not isinstance(api_key, (bytes, str)):
+            raise TypeError("'api_key' must be str")
         
+        match api_key:
+            case bytes():
+                pass
+            case str():
+                api_key = api_key.encode('utf-8')
+        
+        hash_pepper: bytes = self.cipher_conf.get('hash_pepper', b'')
+        hashed_apikey: str = self.cipher_mgr.hash_string(hash_pepper + api_key)
+
+        return hashed_apikey
+    
+    def get_key_owner(
+        self, api_key: str
+    ) -> str:
+        if not isinstance(api_key, (bytes, str)):
+            raise TypeError("'api_key' must be str")
+
+        hashed_apikey: str = self._hash_key(api_key)
+        self.cursor.execute("""
+            SELECT user_id, key_id FROM user_apikeys
+            WHERE api_key=?
+        """, [hashed_apikey])
+        key_data: tuple[str] = self.cursor.fetchone()
+        
+        if not key_data:
+            return "INVALID_APIKEY"
+        
+        user_id: str = key_data[0]
+        key_id: str = key_data[1]
+
+        self.cursor.execute("""
+            SELECT username FROM users
+            WHERE user_id=?
+        """, [user_id])
+        user_data: tuple[bytes] = self.cursor.fetchone()
+        
+        if not user_data:
+            logging.warning(
+                "[APIKeyInterface-keyWithoutOwner]: An key was found in "
+                "the database, but has no owner. Key ID: [%s]",
+                key_id
+            )
+            return "INVALID_APIKEY"  # key has no owner but exists in the database
+        
+        return user_data[0]
+
+    def verify_key(
+            self, api_key: str,
+            permission_type: str
+    ) -> int | str:
+        if not isinstance(api_key, (bytes, str)):
+            raise TypeError("'api_key' must be str")
+
+        if not isinstance(permission_type, (bytes, str)):
+            raise TypeError("'permission_type' must be bytes or str")
+        
+        if permission_type not in self.perms_list:
+            return "INVALID_PERMISSION"
+        
+        hashed_apikey: str = self._hash_key(api_key)
+        self.cursor.execute("""
+            SELECT user_id, key_perms FROM user_apikeys
+            WHERE api_key=?
+        """, [hashed_apikey])
+        perms_data: tuple[bytes] = self.cursor.fetchone()
+        
+        if not perms_data:
+            return "INVALID_APIKEY"
+
+        encoded_key_perms: bytes = perms_data[1]
+        key_perms: list[str] = msgpack.unpackb(encoded_key_perms)
+
+        if permission_type not in key_perms:
+            return "APIKEY_NOT_AUTHORIZED"
+
+        return 0
+
+    def create_key(
+            self, username: str, 
+            key_perms: list[str],
+
+            key_name: str, 
+            expires_on: str
+    ) -> str:
+        if not isinstance(username, (bytes, str)):
+            raise TypeError("'username' must be bytes or str")
+        
+        if not isinstance(key_name, (bytes, str)):
+            raise TypeError("'key_name' must be str")
+
+        if not isinstance(key_perms, list):
+            raise TypeError("'key_perms' can only be an list")
+        
+        for perms in key_perms:
+            if perms not in self.perms_list:
+                return "INVALID_KEYPERMS"
+        
+        try:
+            datetime.strptime(expires_on, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return "INVALID_DATETIME"
+    
+        self.cursor.execute("""
+            SELECT user_id FROM users WHERE username=?
+        """, [username])
+        user_data: tuple[str] = self.cursor.fetchone()
+
+        if not user_data:
+            return "NO_USER"
+        
+        user_id: str = user_data[0]
+        
+        self.cursor.execute("""
+            SELECT key_id FROM user_apikeys
+            WHERE key_name=? AND user_id=?
+        """, [key_name, user_id])
+        key_data: tuple[str] = self.cursor.fetchone()
+
+        if key_data:
+            return "APIKEY_EXISTS"
+        
+        current_time: datetime = datetime.now()
+        gmt8_offset: timedelta = timedelta(hours=8)
+        
+        gmt8_time = current_time + gmt8_offset
+        gmt8_time_str = gmt8_time.strftime("%Y-%m-%d %H:%M:%S.%f")
+
+        hashed_userid: str = self.cipher_mgr.hash_string(
+            user_id + gmt8_time_str
+        )
+        api_key: str = f"syncServer-{hashed_userid}"
+        hashed_apikey: str = self._hash_key(api_key)
+        with self.db:
+            key_id: str = str(uuid.uuid4())
+            encoded_key_perms: bytes = msgpack.packb(key_perms)
+
+            insert_data: list[str] = [
+                key_id, user_id, key_name,
+                hashed_apikey, encoded_key_perms, expires_on
+            ]
+            self.cursor.execute("""
+                INSERT INTO user_apikeys (
+                    key_id, user_id, key_name,
+                    api_key, key_perms, expiry_date
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            """, insert_data)
+        
+        return api_key
+    
+    def delete_key(
+            self, username: str,
+            key_name: str,
+    ) -> int | str:
+        if not isinstance(username, (bytes, str)):
+            raise TypeError("'username' must be bytes or str")
+        
+        if not isinstance(key_name, (bytes, str)):
+            raise TypeError("'key_name' must be str")
+        
+        self.cursor.execute("""
+            SELECT user_id FROM users WHERE username=?
+        """, [username])
+        user_data: tuple[str] = self.cursor.fetchone()
+        
+        if not user_data:
+            return "NO_USER"
+        
+        user_id: str = user_data[0]
+        self.cursor.execute("""
+            SELECT key_id FROM user_apikeys
+            WHERE user_id=? AND key_name=?
+        """, [user_id, key_name])
+        key_data: tuple[str] = self.cursor.fetchone()
+        
+        if not key_data:
+            return "INVALID_APIKEY"
+        
+        key_id: str = key_data[0]
+        with self.db:
+            self.cursor.execute("""
+                DELETE FROM user_apikeys
+                WHERE key_id=? AND user_id=?
+            """, [key_id, user_id])
+        
+        return 0
+
+    def list_keys(self, username: str) -> str | list:
+        if not isinstance(username, (bytes, str)):
+            raise TypeError("'username' must be bytes or str")
+        
+        self.cursor.execute("""
+            SELECT user_id FROM users WHERE username=?
+        """, [username])
+        user_data: tuple[str] = self.cursor.fetchone()
+        
+        if not user_data:
+            return "NO_USER"
+        
+        user_id: str = user_data[0]
+        self.cursor.execute("""
+            SELECT key_name FROM user_apikeys
+            WHERE user_id=?
+        """, [user_id])
+        key_data: tuple[str] = self.cursor.fetchall()
+        
+        if not key_data:
+            return "NO_AVAILABLE_APIKEYS"
+
+        return [key_tuple[0] for key_tuple in key_data]
+
+
+class Main:
+    def __init__(self) -> None:
+        if __name__ != '__main__':
+            raise RuntimeError("can only run this class as a script")
+        
+        description: str = (
+            "Command line tool to manage the syncServer database locally."
+            f" Current version: {__version__}"
+        )
+        self.parser: argparse.ArgumentParser = argparse.ArgumentParser(
+            description=description,
+            prog='syncserver'
+        )
+        self.subparsers = self.parser.add_subparsers(
+            dest='command',
+            help="Available commands"
+        )
+        self._add_args()
+    
+    def _add_args(self) -> None:
+        self.parser.add_argument(
+            '--database-path', '-db',
+            action='store', 
+            nargs='?',
+            default="./syncServer.db",
+            metavar='db-path',
+            help="Path to syncServer database."
+        )
+        self.parser.add_argument(
+            '--edit-config', '-ec',
+            action='store_true',
+            help="Open the configuration and edit it with nano."
+        )
+
+    def _fmt_data(self, data: dict | list, indent: int = 0) -> str:
+        def format_value(value, indent):
+            if isinstance(value, bytes):
+                # Convert bytes to a string representation
+                return f'{value}'
+            elif isinstance(value, bool):
+                # Convert boolean values to string representation without quotes
+                return str(value)
+            elif isinstance(value, dict):
+                # Recursively format nested dictionaries
+                return format_dict(value, indent + 4)
+            elif isinstance(value, list):
+                # Recursively format nested lists
+                return format_list(value, indent + 4)
+            else:
+                return f'"{value}"'  # Quotes for other non-boolean values
+
+        def format_list(data, indent=0):
+            result = "[\n"
+            for item in data:
+                result += " " * indent + f'{format_value(item, indent)},\n'
+            # Remove the trailing comma and add closing bracket with proper indentation
+            result = result.rstrip(",\n") + "\n" + " " * (indent - 4) + "]"
+            return result
+
+        def format_dict(data, indent=0):
+            result = "{\n"
+            for key, value in data.items():
+                result += " " * indent + f'"{key}": {format_value(value, indent)},\n'
+            # Remove the trailing comma and add closing brace with proper indentation
+            result = result.rstrip(",\n") + "\n" + " " * (indent - 4) + "}"
+            return result
+        
+        match data:
+            case list():
+                return format_list(data, indent=indent)
+            case dict():
+                return format_dict(data, indent=indent)
+            case _:
+                raise TypeError("invalid type to format")
+        
+    def parse_args(self) -> None:
+        args = self.parser.parse_args()
+        self.db: FileDatabase = FileDatabase(db_path=args.database_path)
+
+        if args.edit_config:
+            conf_data = {
+                'secrets': self.db.conf_secrets, 
+                'vars': self.db.conf_vars
+            }
+            formatted_data: str = self._fmt_data(conf_data, indent=4)
+
+            with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
+                temp_file.write(formatted_data)
+                temp_file.flush()
+                
+                try:
+                    subprocess.check_call(['/bin/nano', temp_file.name], shell=False)
+                except subprocess.CalledProcessError as e:
+                    self.parser.exit(1, f'nano threw an error: {e}\n')
+                
+                temp_file.seek(0)
+                edited_conf_data: str = temp_file.read()
+            
+            try:
+                edited_conf: dict = ast.literal_eval(edited_conf_data)
+            except SyntaxError:
+                self.parser.exit(1, "Invalid configuration syntax\n")
+
+            if 'secrets' not in edited_conf or 'vars' not in edited_conf:
+                self.parser.exit(1, "'secrets' or 'vars' configuration is missing\n")
+            
+            secrets_is_same = self.db.conf_secrets == edited_conf['secrets']
+            vars_is_same = self.db.conf_vars == edited_conf['vars']
+            if secrets_is_same and vars_is_same:
+                self.parser.exit(0, "No modifications to configurations\n")
+            
+            self.db.save_conf(edited_conf['secrets'], edited_conf['vars'])
+            self.parser.exit(0, 'Saved configuration successfully\n')
+
+
 if __name__ == "__main__":
-    raise NotImplementedError(
-        "this module cannot be run using __main__ and can only be imported"
-    )
+    main = Main()
+    main.parse_args()

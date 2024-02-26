@@ -1,24 +1,30 @@
-## Changes to API
+## Updates to add support for API Tokens
 **Changes:**
 * **`server/__main__.py`**:
-    * Changed all APIs to accept JSON, except for `/upload` and `/modify` as those are file upload APIs.
-    * Replaced some `flask.abort(500)` calls with a `make_response` call that returns generic JSON and a 500 status code.
-    * Will work on adding API token support.
+    * Changed the main script to use individual functions with a global `database` method.
+    * Changed the `case _:` blocks to return the `SERVER_ERROR()` constant.
+    * Changed `_verify_credentials` to `_verify` to support API tokens.
+    * Updated logging messages to include the route.
 * **`server/_db.py`**:
-    * Changed all methods and removed the `token` parameter for all file/directory operations.
-    * Planning to update documentation.
+    * Removed subclassing for `DeletedFiles`.
 * **`client/interface.py`**:
-    * Changed methods to request as JSON compared to a form-data POST.
+    * Changed `__init__` for interface methods to use a `self.headers` variable instead of manually defining it in each method.
 
 **Additions:**
 * **`server/__main__.py`**:
-    * Added better handling when checking for parameter existence, to prevent re-defining the same variable.
-    * Added type annotations to some variables.
-    * Added a check at the start of functions that checks if it's a JSON request, and returns a 415 with a JSON message.
+    * Added support for API tokens. This can now be used to replace the `syncServer-` credentials headers.
+    * Added `SERVER_ERROR()` constant that represents a server error message in JSON.
+    * Added `/api`, `/api/create-key`, `/api/delete-key` and `/api/list-keys` methods.
 * **`server/_db.py`**:
-    * Added type annotations and function return annotations.
+    * Added `APIKeyInterface` class designed to be initialized by `FileDatabase` to support API keys.
+    * Added a simple command line interface that allows you to edit the configuration for the database.
+    It can be accessed with `syncserver.server --edit-config`.
+* **`client/__init__.py`**:
+    * Added `APIKeyInterface` to import and `__all__`.
 * **`client/interface.py`**:
-    * Added methods to handle deleted files.
-    * Added type annotations and function return annotations.
-    * Added `endpoint` parameter to `FileInterface.upload`, allowing you specify the route.
-    The default is `/upload` if `modify_remote` is false, or `/modify`.
+    * Added `APIKeyInterface` to support API key authentication, and `api_key` parameter for all interface methods.
+
+**Other:**
+* API Routes and client interface methods will prioritize API tokens compared to the traditional `syncServer-` authentication method.
+* Changed version number to 1.1.0 
+* Release 1.1.0 will be released once thoroughly tested.
