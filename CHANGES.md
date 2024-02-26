@@ -5,6 +5,7 @@
     * Changed the `case _:` blocks to return the `SERVER_ERROR()` constant.
     * Changed `_verify_credentials` to `_verify` to support API tokens.
     * Updated logging messages to include the route.
+    * Changed `/remove` route to `/delete` route.
 * **`server/_db.py`**:
     * Removed subclassing for `DeletedFiles`.
 * **`client/interface.py`**:
