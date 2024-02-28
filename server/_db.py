@@ -1651,9 +1651,6 @@ class APIKeyInterface:
 
 class Main:
     def __init__(self) -> None:
-        if __name__ != '__main__':
-            raise RuntimeError("can only run this class as a script")
-        
         description: str = (
             "Command line tool to manage the syncServer database locally."
             f" Current application version: {__version__}"
@@ -1815,7 +1812,12 @@ class Main:
             }
             formatted_data: str = self._fmt_data(conf_data, indent=4)
             edited_conf_data: str = self.display_conf(formatted_data)
-
+            
+            try:
+                edited_conf: dict = ast.literal_eval(edited_conf_data)
+            except SyntaxError:
+                self.parser.exit(1, "Invalid configuration syntax\n")
+            
             if 'secrets' not in edited_conf or 'vars' not in edited_conf:
                 self.parser.exit(1, "'secrets' or 'vars' configuration is missing\n")
             
@@ -1874,6 +1876,10 @@ class Main:
             self.parser.exit(0, "Saved database protection status\n")
 
 
-if __name__ == "__main__":
+def run_cli():
     main: Main = Main()
     main.parse_args()
+
+
+if __name__ == "__main__":
+    run_cli()
