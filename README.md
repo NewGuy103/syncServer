@@ -16,23 +16,26 @@ pip install newguy103-syncserver
 
 ### Usage:
 
-The SyncServer Client module offers two main classes:
+The SyncServer Client module offers three main classes:
 
 - **FileInterface**: Handles file-related operations.
 - **DirInterface**: Manages directory-related operations.
+- **APIKeyInterface**: Manages API key-related operations.
 
 ### Example:
 
 ```python
 from syncserver.client import FileInterface, DirInterface
+file_client = FileInterface(username="user", password="pass", server_url="http://localhost:8561")
 
-# Initialize FileInterface or DirInterface
-file_client = FileInterface(username="user", password="pass", server_url="http://localhost:5000")
-
-# Use provided methods for file and directory operations
+# Use provided methods
 file_client.upload([['~/Documents/my-file', '/my-file']])
-dir_client = DirInterface(username="user", password="pass", server_url="http://localhost:5000")
+
+dir_client = DirInterface(username="user", password="pass", server_url="http://localhost:8561")
 dir_client.create("/Docs")
+
+apikey_client = APIKeyInterface(username="user", password="pass", server_url="http://localhost:8561")
+apikey_client.create_key(key_name="Main-API-Key", key_permissions=['create'], key_expiry_date="2025-01-01 0:00:00")
 ```
 
 ## Server (Script)
@@ -56,10 +59,16 @@ export SYNCSERVER_PORT=7009
 - `/upload`: Upload files
 - `/modify`: Modify files
 - `/delete`: Delete files
+- `/restore`: Restore deleted files
+- `/list-deleted`: List deleted file versions
+- `/remove-deleted`: Fully remove a deleted file
 - `/read`: Read files
 - `/create-dir`: Create directories
 - `/remove-dir`: Remove directories
 - `/list-dir`: List directory contents
+- `/api/create-key`: Create an API key
+- `/api/delete-key`: Delete an API key
+- `/api/list-keys`: List API key names
 
 **Note:** Ensure the server is running and accessible from the specified URL.
 
@@ -72,52 +81,19 @@ The module allows you to interact with `syncserver.server` databases without usi
 ### Example:
 ```python
 from syncserver.server import FileDatabase
-
-username = 'username1'
-password = 'password1'
-
-file_stream = open('./file.txt', 'r')
+file_stream = open('./file.txt', 'rb')
 
 # Initialize database connection to local database file
 file_database = FileDatabase(db_path='./syncServer.db')
 
-# Set database protection
-file_database.set_protection(True, cipher_key=b'pw')
+file_database.add_file("user", "/remote-file-path", file_stream)
+file_database.dirs.make_dir("user", "/remote-dir-path")
 
-# Verify user credentials
-credentials_correct = file_database.verify_user(username, password)
-
-# Add or remove a user from the database
-file_database.add_user(username, password)
-file_database.remove_user(username, password)
-
-# Interact with files (requires username and password of a user)
-file_database.add_file(
-    username, password, 
-    '/remote-filepath', file_stream
-)
-file_database.modify_file(
-    username, password, 
-    '/remote-filepath', file_stream
-)
-
-file_database.remove_file(
-    username, password, 
-    '/remote-filepath'
-)
-file_content = file_database.read_file(
-    username, password, 
-    '/remote-filepath'
-)
-
-# Interact with directories (requires username and password of a user)
-file_database.make_dir(username, password, '/dir-path')
-file_database.remove_dir(username, password, '/dir-path')
-
-dir_listing = file_database.list_dir(username, password, '/dir-path')
+file_database.api_keys.create_key("user", ['create'], "Main-API-Key", "2025-01-01 0:00:00")
 ```
 
-Refer to the docstrings in the module for more documentation.
+Refer to the documentation for more information.
+
 ## Version
 
-1.0.0
+1.1.0

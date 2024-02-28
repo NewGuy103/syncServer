@@ -1,32 +1,27 @@
-## Updates to add support for API Tokens
+## More updates for 1.1.0
+
 **Changes:**
-* **`server/__main__.py`**:
-    * Changed the main script to use individual functions with a global `database` method.
-    * Changed the `case _:` blocks to return the `SERVER_ERROR()` constant.
-    * Changed `_verify_credentials` to `_verify` to support API tokens.
-    * Updated logging messages to include the route.
-    * Changed `/remove` route to `/delete` route.
 * **`server/_db.py`**:
-    * Removed subclassing for `DeletedFiles`.
-* **`client/interface.py`**:
-    * Changed `__init__` for interface methods to use a `self.headers` variable instead of manually defining it in each method.
+    * Separated database version from application version. (`db_version` inside `_load_conf`)
+    * Removed optional `hash_pepper` and `password_pepper` parameters from `set_protection` call, 
+    setting these can be done with `--edit-config`.
+    * Separated directory methods into a class named `DirectoryInterface` in the same style as the other classes.
+    * `DeletedFiles.true_delete` now uses `:all:` for deleting all deleted files compared to `all`.
+* **`server/__main__.py`**:
+    * Fixed `restore-which` parameter in `/restore` not taking an integer.
+    * Directory methods now reference the initialized directory interface class. (`self.dirs`)
+    * Deleted files listing and deletion now use `:all:` to target all deleted files.
+* **`README.md`**:
+    * Update README to reflect v1.1.0.
 
 **Additions:**
-* **`server/__main__.py`**:
-    * Added support for API tokens. This can now be used to replace the `syncServer-` credentials headers.
-    * Added `SERVER_ERROR()` constant that represents a server error message in JSON.
-    * Added `/api`, `/api/create-key`, `/api/delete-key` and `/api/list-keys` methods.
 * **`server/_db.py`**:
-    * Added `APIKeyInterface` class designed to be initialized by `FileDatabase` to support API keys.
-    * Added a simple command line interface that allows you to edit the configuration for the database.
-    It can be accessed with `syncserver.server --edit-config`.
-    * Added simple username blacklist in `add_user` to prevent unexpected behaviour within the API.
-* **`client/__init__.py`**:
-    * Added `APIKeyInterface` to import and `__all__`.
-* **`client/interface.py`**:
-    * Added `APIKeyInterface` to support API key authentication, and `api_key` parameter for all interface methods.
-
+    * Added command line options: `--database-protected`, `--edit-vars`, `--set-protection` and `--recover-key`.
+        These can be used for managing the database locally.
+    * Added `recovery_mode` option to `FileDatabase`, which only reads the config variables and does not 
+        initialize the database further.
+* **`docs/`**:
+    * This will be the directory for the documentation.
+    
 **Other:**
-* API Routes and client interface methods will prioritize API tokens compared to the traditional `syncServer-` authentication method.
-* Changed version number to 1.1.0 
-* Release 1.1.0 will be released once thoroughly tested.
+* Updating documentation for v1.1.0. This will use [Read The Docs](https://readthedocs.io) now.

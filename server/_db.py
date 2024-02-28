@@ -28,6 +28,8 @@ Note:
 
 import argparse
 import ast
+import getpass
+import os
 import sqlite3
 
 import subprocess
@@ -74,7 +76,8 @@ class FileDatabase:
 
     def __init__(
             self, db_path: str = './syncServer.db', 
-            db_password: bytes | str = b''
+            db_password: bytes | str = b'',
+            recovery_mode: bool = False
     ) -> None:
         self.db: sqlite3.Connection = sqlite3.connect(db_path, check_same_thread=False)
         self.cursor: sqlite3.Cursor = self.db.cursor()
@@ -158,9 +161,9 @@ class FileDatabase:
             );
         """)
 
-        self._load_conf(db_password=db_password)
+        self._load_conf(db_password=db_password, recovery_mode=recovery_mode)
 
-    def _load_conf(self, db_password: bytes | str = ''):
+    def _load_conf(self, db_password: bytes | str = '', recovery_mode: bool = False):
         """
         Load the configuration data from the 'config' table in the database.
 
@@ -184,6 +187,7 @@ class FileDatabase:
            WHERE config_id='main'
         """)
         config = self.cursor.fetchone()
+        db_version: str = "1.1.0"  # make sure to only update this when updating the database schema
 
         if not config:
             config_secrets = {
@@ -195,7 +199,7 @@ class FileDatabase:
             }
 
             config_vars = {
-                'syncServer-db-version': __version__,
+                'syncServer-db-version': db_version,
                 'syncServer-protected': False,
 
                 'syncServer-recoveryKey': b'',
@@ -213,9 +217,24 @@ class FileDatabase:
 
             config = (msgpack.packb(config_secrets), msgpack.packb(config_vars))
 
-        config_secrets = config[0]
-        config_vars = msgpack.unpackb(config[1])
+        config_secrets: bytes = config[0]
+        config_vars: dict = msgpack.unpackb(config[1])
 
+        if recovery_mode:
+            # Partially initialize config vars to get the recovery key
+            self.conf_vars: dict = config_vars 
+            return
+        
+        stored_db_version: str = config_vars.get('syncServer-db-version', '')
+        if not stored_db_version:
+            raise RuntimeError("cannot find syncServer database version in config vars")
+        
+        if stored_db_version != db_version:
+            raise RuntimeError(
+                f"database version does not match with current version "
+                f"[database_version == {stored_db_version}, current_version == {db_version}]"
+            )
+        
         db_protected = config_vars.get('syncServer-protected', -1)
         if db_protected == -1:
             raise RuntimeError(
@@ -248,15 +267,14 @@ class FileDatabase:
         self._cipher_key: bytes | str = db_password
         self.cipher_conf: dict = config_secrets['encryption_config']
 
+        self.dirs: DirectoryInterface = DirectoryInterface(self)
         self.deleted_files: DeletedFiles = DeletedFiles(self)
+
         self.api_keys: APIKeyInterface = APIKeyInterface(self)
 
     def set_protection(
             self, set_protection: bool,
-            cipher_key: bytes | str = b'',
-
-            hash_pepper: bytes = b'',
-            password_pepper: bytes = b''
+            cipher_key: bytes | str = b''
     ) -> None:
         """
         Set or unset protection for the database, including encryption.
@@ -265,19 +283,9 @@ class FileDatabase:
         - set_protection (bool): True to enable protection, False to disable.
         - cipher_key (bytes or str, optional): Encryption key for protecting the database.
           Required when set_protection is True.
-        - hash_pepper (bytes, optional): Pepper used in hashing operations for added security.
-        - password_pepper (bytes, optional): Pepper used in password-related operations for added security.
-
+        
         Raises:
         - ValueError: If set_protection is True but cipher_key is not provided.
-
-        Notes:
-        - When set_protection is False, encryption and protection features are disabled.
-        - When set_protection is True, encryption and protection features are enabled.
-          The cipher_key is required for encryption, and hash_pepper and password_pepper
-          can be customized for additional security.
-        - If encryption is enabled, a recovery key is generated and stored securely.
-          The recovery key is also saved in a file ('syncServer-recoveryKey.key').
         """
 
         if set_protection and not cipher_key:
@@ -299,10 +307,6 @@ class FileDatabase:
                 """, [bytes_encoded_secrets, bytes_encoded_vars])
             return
 
-        encryption_config = self.conf_secrets['encryption_config']
-        encryption_config['hash_pepper'] = hash_pepper
-        encryption_config['password_pepper'] = password_pepper
-
         self.conf_secrets['use_encryption'] = True
         self.conf_vars['syncServer-protected'] = True
         self.conf_vars['syncServer-encryptionEnabled'] = True
@@ -313,10 +317,11 @@ class FileDatabase:
         recovery_key = secrets.token_hex(32)
 
         encrypted_cipher_key = self.cipher_mgr.fernet.encrypt_data(
-            self._cipher_key, password=recovery_key
+            cipher_key, password=recovery_key
         )
-        self.conf_vars['syncServer-recoveryKey'] = encrypted_cipher_key
+        self._cipher_key: bytes | str = cipher_key
 
+        self.conf_vars['syncServer-recoveryKey'] = encrypted_cipher_key
         with self.db, open('syncServer-recoveryKey.key', 'w', encoding='utf-8') as file:
             self.cursor.execute("""
                 UPDATE config
@@ -487,31 +492,6 @@ class FileDatabase:
         return 0
     
     def dir_checker(self, file_path: str, user_id: str) -> Literal["NO_USER"] | tuple[str]:
-        """
-        Check the existence of the directory associated with a given file path for a specific user.
-
-        Parameters:
-        - file_path (str): The file path to be checked.
-        - user_id (str): The user ID associated with the directory.
-
-        Returns:
-        - Tuple[str]: If the directory exists, returns a tuple containing the directory ID.
-        - "NO_USER": If the specified user ID is not found in the database.
-
-        Raises:
-        - TypeError: If 'file_path' is not of type bytes or str.
-        - ValueError: If 'file_path' is not passed in the arguments.
-        
-        Notes:
-        - Checks if 'file_path' is a valid type (bytes or str).
-        - Raises a TypeError if 'file_path' is not of the expected type.
-        - Raises a ValueError if 'file_path' is not passed in the arguments.
-        - Retrieves the user ID from the 'users' table to ensure the user exists.
-        - Parses the file path to extract the directory path without the file name.
-        - Queries the 'directories' table to check if the directory exists for the specified user.
-        - Returns the directory ID if it exists; otherwise, returns "NO_USER."
-        """
-
         if not isinstance(file_path, (bytes, str)):
             raise TypeError("'file_path' must be bytes or str")
         
@@ -521,22 +501,22 @@ class FileDatabase:
         self.cursor.execute("""
             SELECT user_id FROM users WHERE user_id=?
         """, [user_id])
-        user_data = self.cursor.fetchone()
+        user_data: tuple[str] = self.cursor.fetchone()
 
         if not user_data:
             return "NO_USER"
         
-        dirs = file_path.split("/")
-        path_without_file = "/".join(dirs[0:-1])
+        dirs: list[str] = file_path.split("/")
+        path_without_file: str = "/".join(dirs[0:-1])
 
         if path_without_file == "":
-            path_without_file = "/"
+            path_without_file: str = "/"
         
         self.cursor.execute("""
             SELECT dir_id FROM directories
             WHERE dir_name=? AND user_id=?
         """, [path_without_file, user_id])
-        db_result = self.cursor.fetchone()
+        db_result: tuple[str] = self.cursor.fetchone()
         
         return db_result
     
@@ -547,39 +527,6 @@ class FileDatabase:
             file_stream: BinaryIO | TextIO,
             chunk_size: int = 50 * 1024 * 1024
     ) -> int | str:
-        """
-        Add a file to the database for a specific user.
-
-        Parameters:
-        - username (str): The username of the user adding the file.
-        - file_path (bytes or str): The path of the file to be added.
-        - file_stream (BinaryIO or TextIO): The file stream to read the file content.
-        - chunk_size (int, optional): The size of each chunk when reading the file stream.
-          Default is 50 MB.
-
-        Returns:
-        - 0: If the file is successfully added to the database.
-        - "NO_USER": If the specified username is not found in the database.
-        - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
-        - "NO_DIR_EXISTS": If the directory for the file does not exist for the specified user.
-        - "FILE_EXISTS": If a file with the same name already exists in the specified directory.
-
-        Raises:
-        - TypeError: If 'file_path' is not of type bytes or str.
-        - IOError: If the file stream is empty.
-
-        Notes:
-        - Checks if 'file_path' is a valid type (bytes or str).
-        - Raises a TypeError if 'file_path' is not of the expected type.
-        - Retrieves the user ID and verifies the user using the provided username and token.
-        - Raises an IOError if the file stream is empty.
-        - Checks if the directory for the file exists for the specified user.
-        - Returns "FILE_EXISTS" if a file with the same name already exists in the specified directory.
-        - If encryption is enabled, encrypts the file content before storing it in the database.
-        - Uses chunking to handle large file sizes efficiently.
-        - Returns 0 upon successful addition of the file to the database.
-        """
-        
         if not isinstance(file_path, (bytes, str)):
             raise TypeError("'file_path' must be bytes or str")
         
@@ -1035,40 +982,28 @@ class FileDatabase:
         # allows the function to return plain values instead of
         # requiring me to use next() and then checking the value
         return generator()
+        
+
+class DirectoryInterface:
+    def __init__(self, parent: FileDatabase) -> None:
+        self.db: sqlite3.Connection = parent.db
+        self.cursor: sqlite3.Cursor = parent.cursor
+
+        self.pw_hasher: argon2.PasswordHasher = parent.pw_hasher
+        self.cipher_mgr: CipherManager = parent.cipher_mgr
+
+        self.conf_secrets: dict = parent.conf_secrets
+        self.conf_vars: dict = parent.conf_vars
+
+        self._cipher_key: bytes | str = parent._cipher_key
+        self.cipher_conf: dict = self.conf_secrets['encryption_config']
+
+        self.dir_checker: Callable = parent.dir_checker
     
     def make_dir(
             self, username: str,
             dir_path: str
     ) -> int | str:
-        """
-        Create a new directory in the database for a specific user.
-
-        Parameters:
-        - username (str): The username of the user creating the directory.
-        - dir_path (str): The path of the directory to be created.
-
-        Returns:
-        - 0: If the directory is successfully created in the database.
-        - "NO_USER": If the specified username is not found in the database.
-        - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
-        - "DIR_EXISTS": If the specified directory already exists for the specified user.
-        - "MISSING_PATH": If the 'dir_path' is empty.
-        - "INVALID_DIR_PATH": If the 'dir_path' is not a valid directory path.
-
-        Raises:
-        - TypeError: If 'dir_path' is not of type bytes or str.
-
-        Notes:
-        - Checks if 'dir_path' is a valid type (bytes or str).
-        - Raises a TypeError if 'dir_path' is not of the expected type.
-        - Retrieves the user ID and verifies the user using the provided username and token.
-        - Returns "MISSING_PATH" if 'dir_path' is empty.
-        - Returns "INVALID_DIR_PATH" if 'dir_path' is not a valid directory path.
-        - Returns "DIR_EXISTS" if the specified directory already exists for the specified user.
-        - Inserts a new directory entry into the 'directories' table in the database.
-        - Returns 0 upon successful creation of the directory in the database.
-        """
-
         if not isinstance(dir_path, (bytes, str)):
             raise TypeError("'dir_path' must be bytes or str")
         
@@ -1117,34 +1052,6 @@ class FileDatabase:
             self, username: str,
             dir_path: str
     ) -> int | str:
-        """
-        Remove an existing directory and its contents from the database for a specific user.
-
-        Parameters:
-        - username (str): The username of the user removing the directory.
-        - dir_path (str): The path of the directory to be removed.
-
-        Returns:
-        - 0: If the directory and its contents are successfully removed from the database.
-        - "NO_USER": If the specified username is not found in the database.
-        - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
-        - "NO_DIR_EXISTS": If the specified directory does not exist for the specified user.
-        - "ROOT_DIR": If attempting to remove the root directory.
-        - "INVALID_DIR_PATH": If the 'dir_path' is not a valid directory path.
-
-        Raises:
-        - TypeError: If 'dir_path' is not of type bytes or str.
-
-        Notes:
-        - Checks if 'dir_path' is a valid type (bytes or str).
-        - Raises a TypeError if 'dir_path' is not of the expected type.
-        - Retrieves the user ID and verifies the user using the provided username and token.
-        - Returns "ROOT_DIR" if attempting to remove the root directory.
-        - Returns "INVALID_DIR_PATH" if 'dir_path' is not a valid directory path.
-        - Deletes the specified directory and its contents from the 'directories' table in the database.
-        - Returns 0 upon successful removal of the directory and its contents from the database.
-        """
-
         if not isinstance(dir_path, (bytes, str)):
             raise TypeError("'dir_path' must be bytes or str")
         
@@ -1190,33 +1097,6 @@ class FileDatabase:
             self, username: str,
             dir_path: str
     ) -> str | list[str]:
-        """
-        List the files in a specific directory for a given user.
-
-        Parameters:
-        - username (str): The username of the user listing the directory.
-        - dir_path (str): The path of the directory to be listed.
-
-        Returns:
-        - List[str]: A list of filenames in the specified directory.
-        - "NO_USER": If the specified username is not found in the database.
-        - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
-        - "NO_DIR_EXISTS": If the specified directory does not exist for the specified user.
-        - "INVALID_DIR_PATH": If the 'dir_path' is not a valid directory path.
-
-        Raises:
-        - TypeError: If 'dir_path' is not of type bytes or str.
-
-        Notes:
-        - Checks if 'dir_path' is a valid type (bytes or str).
-        - Raises a TypeError if 'dir_path' is not of the expected type.
-        - Retrieves the user ID and verifies the user using the provided username and token.
-        - Returns "NO_DIR_EXISTS" if the specified directory does not exist for the specified user.
-        - Returns "INVALID_DIR_PATH" if 'dir_path' is not a valid directory path.
-        - Retrieves filenames from the 'files' table for the specified directory.
-        - Returns a list of filenames in the specified directory.
-        """
-
         if not isinstance(dir_path, (bytes, str)):
             raise TypeError("'dir_path' must be bytes or str")
         
@@ -1258,7 +1138,7 @@ class FileDatabase:
         files = [i[0] for i in dir_listing]
         
         return files
-        
+
 
 class DeletedFiles:
     def __init__(self, parent: FileDatabase) -> None:
@@ -1341,20 +1221,20 @@ class DeletedFiles:
             WHERE filename=? AND user_id=? AND dir_id=?
         """, [file_path, user_id, dir_id])
 
-        file_data = self.cursor.fetchall()
+        file_data: list[tuple[str]] = self.cursor.fetchall()
         if not file_data:
             return "NO_MATCHING_FILES"
 
-        delete_data = []
+        delete_data: list = []
         for file_tuple in file_data:
-            file_id = file_tuple[0]
+            file_id: str = file_tuple[0]
             self.cursor.execute("""
                 SELECT delete_date FROM deleted_files
                 WHERE data_id=?
                 ORDER BY delete_date DESC;
             """, [file_id])
 
-            tmp_delete_data = self.cursor.fetchone()
+            tmp_delete_data: tuple[str] = self.cursor.fetchone()
             if tmp_delete_data:
                 delete_data.append(tmp_delete_data[0])
                 continue
@@ -1380,37 +1260,37 @@ class DeletedFiles:
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
         """, [username])
-        user_data = self.cursor.fetchone()
+        user_data: tuple[str] = self.cursor.fetchone()
 
         if not user_data:
             return "NO_USER"
 
-        user_id = user_data[0]
+        user_id: str = user_data[0]
 
-        dir_exists = self.dir_checker(file_path, user_id)
+        dir_exists: tuple[str] = self.dir_checker(file_path, user_id)
         if not dir_exists:
             return "NO_DIR_EXISTS"
 
-        dir_id = dir_exists[0]
+        dir_id: str = dir_exists[0]
         self.cursor.execute("""
             SELECT data_id FROM files
             WHERE filename=? AND user_id=? AND dir_id=?
         """, [file_path, user_id, dir_id])
 
-        file_data = self.cursor.fetchall()
+        file_data: list[tuple[str]] = self.cursor.fetchall()
         if not file_data:
             return "NO_FILE_EXISTS"
 
-        delete_data = []
+        delete_data: list = []
         for file_tuple in file_data:
-            file_id = file_tuple[0]
+            file_id: str = file_tuple[0]
             self.cursor.execute("""
                 SELECT data_id FROM deleted_files
                 WHERE data_id=?
                 ORDER BY delete_date DESC
             """, [file_id])
 
-            tmp_delete_data = self.cursor.fetchone()
+            tmp_delete_data: tuple[str] = self.cursor.fetchone()
             if tmp_delete_data:
                 del_data_id = tmp_delete_data[0]
                 delete_data.append(del_data_id)
@@ -1434,16 +1314,16 @@ class DeletedFiles:
             return "OUT_OF_BOUNDS"
 
         if len(delete_data) == 1:
-            restore_which = 0  # restore the found one implicitly
+            restore_which: int = 0  # restore the found one implicitly
 
         # SQLite3 returns the whole list oldest -> latest so we reverse it
-        delete_data = list(reversed(delete_data))
+        delete_data: list = list(reversed(delete_data))
 
         with self.db:
             # Fetch the list with the data ids and then get the data id
             # [ ('data-id') ] -> delete_data[restore_which]
 
-            data_id = delete_data[restore_which]
+            data_id: str = delete_data[restore_which]
             self.cursor.execute("""
                 DELETE FROM deleted_files
                 WHERE data_id=?
@@ -1454,18 +1334,18 @@ class DeletedFiles:
     def true_delete(
             self, username: str,
             file_path: bytes | str,
-            delete_which: int | Literal['all'] = 0
+            delete_which: int | Literal[':all:'] = 0
     ) -> str | int:
         if not isinstance(file_path, (bytes, str)):
             raise TypeError("'file_path' must be bytes or str")
 
-        if not (delete_which == "all" or isinstance(delete_which, int)):
-            raise TypeError("'delete_which' can only be an int or 'all'")
+        if not (delete_which == ":all:" or isinstance(delete_which, int)):
+            raise TypeError("'delete_which' can only be an int or ':all:'")
         
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
         """, [username])
-        user_data = self.cursor.fetchone()
+        user_data: tuple[str] = self.cursor.fetchone()
 
         if not user_data:
             return "NO_USER"
@@ -1475,26 +1355,26 @@ class DeletedFiles:
         if not dir_exists:
             return "NO_DIR_EXISTS"
 
-        dir_id = dir_exists[0]
+        dir_id: str = dir_exists[0]
         self.cursor.execute("""
             SELECT data_id FROM files
             WHERE filename=? AND user_id=? AND dir_id=?
         """, [file_path, user_id, dir_id])
 
-        file_data = self.cursor.fetchall()
+        file_data: list[tuple[str]] = self.cursor.fetchall()
         if not file_data:
             return "NO_MATCHING_FILES"
 
-        delete_data = []
+        delete_data: list = []
         for file_tuple in file_data:
-            file_id = file_tuple[0]
+            file_id: str = file_tuple[0]
             self.cursor.execute("""
                 SELECT data_id FROM deleted_files
                 WHERE data_id=?
                 ORDER BY delete_date DESC
             """, [file_id])
 
-            tmp_delete_data = self.cursor.fetchone()
+            tmp_delete_data: tuple[str] = self.cursor.fetchone()
             if tmp_delete_data:
                 del_data_id = tmp_delete_data[0]
                 delete_data.append(del_data_id)
@@ -1504,9 +1384,10 @@ class DeletedFiles:
         if not delete_data:
             return "NO_MATCHING_FILES"
 
-        if len(delete_data) > 1 and delete_which is None:
+        # if not deleting all deleted files
+        if file_path != ":all:" and len(delete_data) > 1 and delete_which is None:
             raise ValueError(
-                "found more than one deleted file but no parameter to restore which file")
+                "found more than one deleted file but no parameter to delete which file")
 
         # If the value of delete_which is bigger than the length of deleted file ids
         # minus one (since we index starting from zero), then assume out of bounds
@@ -1514,12 +1395,12 @@ class DeletedFiles:
             return "OUT_OF_BOUNDS"
 
         if len(delete_data) == 1:
-            delete_which = 0  # delete the found one implicitly
+            delete_which: int = 0  # delete the found one implicitly
 
         # SQLite3 returns the whole list oldest -> latest so we reverse it
-        delete_data = list(reversed(delete_data))
+        delete_data: list = list(reversed(delete_data))
 
-        if delete_which == "all":
+        if delete_which == ":all:":
             with self.db:
                 for file_id_to_delete in delete_data:
                     self.cursor.execute("""
@@ -1775,15 +1656,11 @@ class Main:
         
         description: str = (
             "Command line tool to manage the syncServer database locally."
-            f" Current version: {__version__}"
+            f" Current application version: {__version__}"
         )
         self.parser: argparse.ArgumentParser = argparse.ArgumentParser(
             description=description,
-            prog='syncserver'
-        )
-        self.subparsers = self.parser.add_subparsers(
-            dest='command',
-            help="Available commands"
+            prog='syncserver.server-db'
         )
         self._add_args()
     
@@ -1797,9 +1674,29 @@ class Main:
             help="Path to syncServer database."
         )
         self.parser.add_argument(
+            '--database-protected', '-dp',
+            action='store_true',
+            help="Prompt to enter the database password."
+        )
+        self.parser.add_argument(
+            '--recover-key', '-rk',
+            action='store_true',
+            help="Recover the original encryption key with the key password."
+        )
+        self.parser.add_argument(
+            '--edit-vars', '-ev',
+            action='store_true',
+            help='Edit configuration variables without fully initializing the database.'
+        )
+        self.parser.add_argument(
             '--edit-config', '-ec',
             action='store_true',
             help="Open the configuration and edit it with nano."
+        )
+        self.parser.add_argument(
+            '--set-protection', '-sp',
+            action='store_true',
+            help="Set the encryption key that the database will use."
         )
 
     def _fmt_data(self, data: dict | list, indent: int = 0) -> str:
@@ -1842,10 +1739,74 @@ class Main:
                 return format_dict(data, indent=indent)
             case _:
                 raise TypeError("invalid type to format")
+    
+    def display_conf(self, formatted_data: str) -> str:
+        with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
+            temp_file.write(formatted_data)
+            temp_file.flush()
+                
+            try:
+                subprocess.check_call(['/bin/nano', temp_file.name], shell=False)
+            except subprocess.CalledProcessError as e:
+                self.parser.exit(1, f'nano threw an error: {e}\n')
+            
+            temp_file.seek(0)
+            edited_conf_data: str = temp_file.read()
         
+        return edited_conf_data
+    
     def parse_args(self) -> None:
         args = self.parser.parse_args()
-        self.db: FileDatabase = FileDatabase(db_path=args.database_path)
+        if args.database_protected:
+            db_password: str = getpass.getpass("Enter the database password: ")
+        else:
+            db_password: str = ''
+        
+        if args.recover_key:
+            self.db: FileDatabase = FileDatabase(
+                db_path=args.database_path,
+                recovery_mode=True
+            )
+            conf_data: dict = self.db.conf_vars
+            recovery_key: bytes = conf_data.get('syncServer-recoveryKey')
+
+            if not recovery_key:
+                self.parser.exit(1, "Could not find recovery key entry in config variables\n")
+
+            key_password: str = getpass.getpass("Enter the recovery key: ")            
+            try:
+                original_key: bytes = self.db.cipher_mgr.fernet.decrypt_data(
+                    recovery_key, password=key_password
+                )
+            except cryptography.fernet.InvalidToken:  # type: ignore
+                self.parser.exit(1, "Decrypting recovery key failed\n")
+            
+            self.parser.exit(0, f"Found original key: {original_key}\n")
+
+        if args.edit_vars:
+            self.db: FileDatabase = FileDatabase(
+                db_path=args.database_path,
+                recovery_mode=True
+            )
+            formatted_data: str = self._fmt_data(self.db.conf_vars, indent=4)
+            edited_conf_data: str = self.display_conf(formatted_data)
+
+            try:
+                edited_conf: dict = ast.literal_eval(edited_conf_data)
+            except SyntaxError:
+                self.parser.exit(1, "Invalid configuration syntax\n")
+
+            self.db.save_conf(None, edited_conf)
+            if edited_conf == self.db.conf_vars:
+                self.parser.exit(0, "No modifications to configuration variables\n")
+            
+            self.parser.exit(0, "Saved configuration variables successfully\n")
+        
+        # Reach this point only if not recovering database
+        self.db: FileDatabase = FileDatabase(
+            db_path=args.database_path,
+            db_password=db_password
+        )
 
         if args.edit_config:
             conf_data = {
@@ -1853,36 +1814,66 @@ class Main:
                 'vars': self.db.conf_vars
             }
             formatted_data: str = self._fmt_data(conf_data, indent=4)
+            edited_conf_data: str = self.display_conf(formatted_data)
 
-            with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
-                temp_file.write(formatted_data)
-                temp_file.flush()
-                
-                try:
-                    subprocess.check_call(['/bin/nano', temp_file.name], shell=False)
-                except subprocess.CalledProcessError as e:
-                    self.parser.exit(1, f'nano threw an error: {e}\n')
-                
-                temp_file.seek(0)
-                edited_conf_data: str = temp_file.read()
+            if 'secrets' not in edited_conf or 'vars' not in edited_conf:
+                self.parser.exit(1, "'secrets' or 'vars' configuration is missing\n")
+            
+            secrets_is_same: bool = self.db.conf_secrets == edited_conf['secrets']
+            vars_is_same: bool = self.db.conf_vars == edited_conf['vars']
+            if secrets_is_same and vars_is_same:
+                self.parser.exit(0, "No modifications to configurations\n")
+            
+            self.db.save_conf(edited_conf['secrets'], edited_conf['vars'])
+            self.parser.exit(0, 'Saved configuration successfully\n')
+        
+        if args.set_protection:
+            conf_data: dict = {
+                'cipher_key': b""
+            }
+            formatted_data: str = self._fmt_data(conf_data, indent=4)
+            edited_conf_data: str = self.display_conf(formatted_data)
+            
+            if os.path.isfile("./syncServer-recoveryKey.key"):
+                emsg: str = (
+                    "Warning: Recovery key file exists in current directory, "
+                    "delete or move this file before changing encryption key\n"
+                )
+                self.parser.exit(
+                    message=emsg,
+                    status=1
+                )
             
             try:
                 edited_conf: dict = ast.literal_eval(edited_conf_data)
             except SyntaxError:
                 self.parser.exit(1, "Invalid configuration syntax\n")
 
-            if 'secrets' not in edited_conf or 'vars' not in edited_conf:
-                self.parser.exit(1, "'secrets' or 'vars' configuration is missing\n")
+            if 'cipher_key' not in edited_conf:
+                self.parser.exit(1, "'cipher_key' configuration is missing\n")
             
-            secrets_is_same = self.db.conf_secrets == edited_conf['secrets']
-            vars_is_same = self.db.conf_vars == edited_conf['vars']
-            if secrets_is_same and vars_is_same:
-                self.parser.exit(0, "No modifications to configurations\n")
+            cipher_key: bytes | str = edited_conf['cipher_key']
+            if not isinstance(cipher_key, (bytes, str)):
+                self.parser.exit(1, "Cipher key is not bytes or string\n")
             
-            self.db.save_conf(edited_conf['secrets'], edited_conf['vars'])
-            self.parser.exit(0, 'Saved configuration successfully\n')
+            if not cipher_key and cipher_key is not None:
+                self.parser.exit(1, "Set 'cipher_key' to None to disable protection\n")
+            
+            if self.db.conf_vars['syncServer-encryptionEnabled']:
+                print("Warning: This will not re-encrypt existing data.")
+                warning_input: str = input(
+                    "Files and data were previously encrypted in this database "
+                    "with a different key. Proceed anyway? [Y/N]: "
+                )
+                if warning_input.lower() != "y":
+                    self.parser.exit(0, "Aborted.\n")
+            
+            set_protection: bool = bool(cipher_key)
+            self.db.set_protection(set_protection, cipher_key)
+            
+            self.parser.exit(0, "Saved database protection status\n")
 
 
 if __name__ == "__main__":
-    main = Main()
+    main: Main = Main()
     main.parse_args()

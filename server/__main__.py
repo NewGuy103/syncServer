@@ -441,9 +441,9 @@ def file_restores():
             'ecode': "MISSING_PARAMETER"
         }, 400)
             
-    if restore_which not in [True, False]:
+    if not isinstance(restore_which, int):
         return flask.make_response({
-            'error': "restore-which parameter can only be bool",
+            'error': "restore-which parameter can only be an integer",
             'ecode': "INVALID_PARAMETER"
         }, 400)
             
@@ -619,9 +619,9 @@ def remove_deleted():
         }, 400)
 
     # check if delete_which is 'all' or an int
-    if not (delete_which != "all" or isinstance(delete_which, int)):
+    if not (delete_which != ":all:" or isinstance(delete_which, int)):
         return flask.make_response({
-            'error': "delete-which parameter can only be int or 'all'",
+            'error': "delete-which parameter can only be int or ':all:'",
             'ecode': "INVALID_PARAMETER"
         }, 400)
 
@@ -632,6 +632,9 @@ def remove_deleted():
         }, 400)
 
     response_code = 200
+    if file_path != ":all:" and file_path[0] != "/":
+        file_path: str = "/" + file_path
+
     result = database.deleted_files.true_delete(
         username, file_path,
         delete_which=delete_which
@@ -787,7 +790,7 @@ def dir_creations():
             'ecode': "INVALID_CONTENT"
         }, 400)
             
-    result = database.make_dir(
+    result: int | str = database.dirs.make_dir(
         username, dir_path
     )
 
@@ -858,7 +861,7 @@ def dir_deletions():
             'ecode': "INVALID_CONTENT"
         }, 400)
             
-    result = database.remove_dir(
+    result: int | str = database.dirs.remove_dir(
         username, dir_path
     )
 
@@ -929,7 +932,7 @@ def dir_listing():
             'ecode': "INVALID_CONTENT"
         }, 400)
             
-    result: str | list[str] = database.list_dir(
+    result: str | list[str] = database.dirs.list_dir(
         username, dir_path
     )
 
