@@ -216,14 +216,14 @@ class FileInterface:
     def remove_deleted(
         self,
         remote_path: bytes | str,
-        delete_which: int | Literal["all"],
+        delete_which: int | Literal[":all:"],
         endpoint: str = "/remove-deleted",
     ) -> int | dict:
         if not isinstance(remote_path, (bytes, str)):
             raise TypeError("remote path must be bytes/str")
 
-        if not (delete_which == "all" or isinstance(delete_which, int)):
-            raise TypeError("delete_which can only be 'all' or int")
+        if not (delete_which == ":all:" or isinstance(delete_which, int)):
+            raise TypeError("delete_which can only be ':all:' or int")
 
         data: dict = {"file-path": remote_path, "delete-which": delete_which}
         response = requests.post(
