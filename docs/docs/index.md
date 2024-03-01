@@ -2,7 +2,7 @@
 
 **newguy103-syncserver** is a Python package designed to simplify file synchronization operations through a server-client architecture. The package provides both the server, built on Flask, and a client module for interacting with the server.
 
-Current latest version: 1.1.0
+Current latest version: 1.1.1
 
 ```python
 >>> from syncserver.client import FileInterface
