@@ -4,6 +4,7 @@ import getpass
 import secrets
 import types
 import os
+from typing import Generator
 
 import flask
 
@@ -22,28 +23,42 @@ if __name__ == '__main__':
     database: FileDatabase = FileDatabase(db_password=db_password)
 
 
-def SERVER_ERROR():
+def SERVER_ERROR() -> flask.Response:
     return flask.make_response({
         'error': "Internal Server Error",
         'ecode': "SERVER_ERROR"
     }, 500)
 
 
+def NOT_JSON_ERROR() -> flask.Response:
+    return flask.make_response({
+        'error': "Provided request must be in a JSON format",
+        'ecode': "415"
+    }, 415)
+
+
 def _verify(headers: dict, _api_permission_type: str = '') -> flask.Response | int:
     """
-    Return response depending on token verification status
-            
-    Parameters:
-        username (str): Username to verify
-        password (str): Password to verify
+    Return response depending on token verification status,
+    can either be using username/password or API key.
     """
 
     global database
 
     api_key = headers.get('Authorization', '')
+    if not isinstance(api_key, str):
+        return flask.make_response({
+            'error': "Provided API key is not a string",
+            'ecode': "INVALID_TYPE"
+        }, 400)
+    
     if api_key:
-        result = database.api_keys.verify_key(api_key, _api_permission_type)
+        result: int | str = database.api_keys.verify_key(api_key, _api_permission_type)
+        response: int | flask.Response = 0
+
         match result:
+            case 0:
+                pass
             case "INVALID_APIKEY":
                 response = flask.make_response({
                     'error': "Invalid API Key",
@@ -54,26 +69,39 @@ def _verify(headers: dict, _api_permission_type: str = '') -> flask.Response | i
                     'error': "You are not authorized to do this action.",
                     'ecode': result
                 }, 401)
-            case 0:
-                response = 0
             case _:
                 logging.error(
                     "[FLASK-API-VERIFY]: API Key verifier function returned unexpected data: '%s'",
                     result    
                 )
                 return SERVER_ERROR()
-                
+        
+        if _api_permission_type == 'all' and result != "INVALID_APIKEY":
+            return 0  # Allow access from all API keys, do not always use this
+        
         return response
-            
+    
     username: str = headers.get('syncServer-Username', '')
     password: str = headers.get('syncServer-Password', '')
+    
+    if not isinstance(username, str):
+        return flask.make_response({
+            'error': "Username header field is not a string",
+            'ecode': "INVALID_TYPE"
+        }, 400)
+    
+    if not isinstance(password, str):
+        return flask.make_response({
+            'error': "Password header field is not a string",
+            'ecode': "INVALID_TYPE"
+        }, 400)
     
     token_verified_result = database.verify_user(username, password)
     if not token_verified_result or token_verified_result == "NO_USER":
         err_response = flask.make_response({
             'error': "User credentials are invalid.",
             'ecode': "INVALID_CREDENTIALS"
-        }, 400)
+        }, 401)
         return err_response
             
     if isinstance(token_verified_result, Exception):
@@ -83,6 +111,37 @@ def _verify(headers: dict, _api_permission_type: str = '') -> flask.Response | i
     return 0
 
 
+@APP.get('/auth/check')
+def check_creds():
+    global database
+    headers = request.headers
+
+    verify_result = _verify(headers, _api_permission_type='all')
+    if verify_result != 0:
+        logging.info(verify_result)
+        return verify_result
+    
+    username: str = headers.get('syncServer-Username')
+    password: str = headers.get('syncServer-Password')
+
+    api_key: str = headers.get('Authorization')
+    if api_key:
+        return flask.make_response({
+            'auth-type': 'apikey', 
+            'success': True
+        }, 200)
+    elif username and password:
+        return flask.make_response({
+            'auth-type': 'password', 
+            'success': True
+        }, 200)
+    
+    # If both are blank
+    logging.error("[/auth/check]: API key and username/password credentials are blank")
+    return SERVER_ERROR()
+
+
+@APP.post('/api/files/upload')
 @APP.post("/upload")
 def file_uploads():
     global database
@@ -104,30 +163,32 @@ def file_uploads():
     if username == "INVALID_APIKEY":
         username: str = headers.get('syncServer-Username', '')
             
-    successful_runs = []
-    failed_runs = {}
+    successful_runs: list[str] = []
+    failed_runs: dict[str, str] = {}
 
-    response_code = 200
+    response_code: int = 200
 
     for file in files.values():
         if not file.name:
-            return_name = f'unnamed-remote-[{file.filename}]-{secrets.randbelow(10**6)}'
+            num: int = secrets.randbelow(900000) + 100000
+            return_name = f'unnamed-remote-[{file.filename}]-{num}'
             failed_runs[return_name] = {
                 'error': "No remote path was specified for this filename",
                 'ecode': "NO_REMOTE_PATH"
             }
             response_code = 400
             continue
-        elif not isinstance(file.name, (bytes, str)):
-            return_name = f'wrong-content-type-[{file.name}]-{secrets.randbelow(10**6)}'
+        elif not isinstance(file.name, str):
+            num: int = secrets.randbelow(900000) + 100000
+            return_name = f'wrong-content-type-[{file.name}]-{num}'
             failed_runs[return_name] = {
-                'error': 'Remote file path is not bytes or string',
+                'error': 'Remote file path is not a string',
                 'ecode': 'INVALID_CONTENT'
             }
             response_code = 400
             continue
                 
-        stream_data = file.stream.read(1)
+        stream_data: bytes = file.stream.read(1)
         if not stream_data:
             failed_runs[file.name] = {
                 'error': "File stream is empty",
@@ -135,9 +196,12 @@ def file_uploads():
             }
             response_code = 400
             continue
-                
+        
         file.stream.seek(0)
-        result = database.add_file(
+        if file.name[0] != "/":
+            file.name = "/" + file.name
+        
+        result: int | str = database.add_file(
             username, file.name, 
             file.stream
         )
@@ -186,6 +250,7 @@ def file_uploads():
     return flask.make_response(response, response_code)
 
 
+@APP.post("/api/files/modify")
 @APP.post("/modify")
 def file_updates():
     global database
@@ -207,30 +272,32 @@ def file_updates():
     if username == "INVALID_APIKEY":
         username: str = headers.get('syncServer-Username', '')
 
-    successful_runs = []
-    failed_runs = {}
+    successful_runs: list[str] = []
+    failed_runs: dict[str, str] = {}
 
-    response_code = 200
+    response_code: int = 200
 
     for file in files.values(): 
         if not file.name:
-            return_name = f'unnamed-remote-[{file.filename}]-{secrets.randbelow(10**6)}'
+            num: int = secrets.randbelow(900000) + 100000
+            return_name = f'unnamed-remote-[{file.filename}]-{num}'
             failed_runs[return_name] = {
                 'error': "No remote path was specified for this filename",
                 'ecode': "NO_REMOTE_PATH"
             }
             response_code = 400
             continue
-        elif not isinstance(file.name, (bytes, str)):
-            return_name = f'wrong-content-type-[{file.name}]-{secrets.randbelow(10**6)}'
+        elif not isinstance(file.name, str):
+            num: int = secrets.randbelow(900000) + 100000
+            return_name = f'wrong-content-type-[{file.name}]-{num}'
             failed_runs[return_name] = {
-                'error': 'Remote file path is not bytes or string',
+                'error': 'Remote file path is not a string',
                 'ecode': 'INVALID_CONTENT'
             }
             response_code = 400
             continue
 
-        stream_data = file.stream.read(1)
+        stream_data: bytes = file.stream.read(1)
         if not stream_data:
             failed_runs[file.name] = {
                 'error': "File stream is empty",
@@ -240,10 +307,14 @@ def file_updates():
             continue
                 
         file.stream.seek(0)
-        result = database.modify_file(
+        if file.name[0] != "/":
+            file.name = "/" + file.name
+        
+        result: int | str = database.modify_file(
             username, file.name, 
             file.stream
         )
+        
         match result:
             case "NO_DIR_EXISTS":
                 failed_runs[file.name] = {
@@ -289,15 +360,13 @@ def file_updates():
     return flask.make_response(response, response_code)
 
 
+@APP.post("/api/files/delete")
 @APP.post("/delete")
 def file_deletes():
     global database
 
     if not request.is_json:
-        return flask.make_response({
-            'error': "Provided request must be in a JSON format",
-            'ecode': "415"
-        }, 415)
+        return NOT_JSON_ERROR()
             
     data = request.json
     headers = request.headers
@@ -310,47 +379,46 @@ def file_deletes():
     if username == "INVALID_APIKEY":
         username: str = headers.get('syncServer-Username', '')
             
-    file_paths: list[str] = data.get('file-paths', None)
-            
-    if file_paths is None:
+    file_paths: list[str] = data.get('file-paths')
+    if not file_paths:
         return flask.make_response({
             'error': 'No file paths provided to read',
             'ecode': 'MISSING_FILEPATHS'
         }, 400)
 
-    true_delete: bool = data.get('true-delete', None)
-    if true_delete is None:
+    true_delete: bool = data.get('true-delete', -1)
+    if true_delete == -1:
         return flask.make_response({
             'error': "True delete parameter was not found",
             'ecode': "MISSING_PARAMETER"
         }, 400)
-            
-    if true_delete not in [True, False]:
+    
+    if true_delete not in {True, False}:
         return flask.make_response({
             'error': "True delete parameter can only be bool",
             'ecode': "INVALID_PARAMETER"
         }, 400)
             
-    if not isinstance(data['file-paths'], list):
+    if not isinstance(file_paths, list):
         return flask.make_response({
             'error': "File paths can only be a list",
             'ecode': "INVALID_CONTENT"
         }, 400)
             
     # Check each path in file-paths and filter out the ones that aren't 
-    # bytes or string, and isn't empty
+    # string, and isn't empty
     filenames: list[str] = [
         str(item) for item in data['file-paths'] 
-        if isinstance(item, (str, bytes)) and item
+        if isinstance(item, str) and item
     ]
             
-    successful_runs = []
-    failed_runs = {}
+    successful_runs: list[str] = []
+    failed_runs: dict[str, str] = {}
 
-    response_code = 200
+    response_code: int = 200
 
     for file in filenames:
-        result = database.remove_file(
+        result: int | str = database.remove_file(
             username, file,
             permanent_delete=true_delete
         )
@@ -405,15 +473,13 @@ def file_deletes():
     return flask.make_response(response, response_code)
 
 
+@APP.post("/api/files/restore")
 @APP.post("/restore")
 def file_restores():
     global database
 
     if not request.is_json:
-        return flask.make_response({
-            'error': "Provided request must be in a JSON format",
-            'ecode': "415"
-        }, 415)
+        return NOT_JSON_ERROR()
             
     data = request.json
     headers = request.headers
@@ -426,38 +492,37 @@ def file_restores():
     if username == "INVALID_APIKEY":
         username: str = headers.get('syncServer-Username', '')
             
-    file_path: str = data.get('file-path', None)
-
-    if file_path is None:
+    file_path: str = data.get('file-path')
+    if not file_path:
         return flask.make_response({
             'error': 'No file path provided to restore',
             'ecode': 'MISSING_FILEPATH'
         }, 400)
 
-    restore_which: bool = data.get('restore-which', None)
-    if restore_which is None:
+    restore_which: int = data.get('restore-which', '')
+    if restore_which == '':
         return flask.make_response({
             'error': "restore-which parameter was not found",
             'ecode': "MISSING_PARAMETER"
         }, 400)
-            
+    
     if not isinstance(restore_which, int):
         return flask.make_response({
             'error': "restore-which parameter can only be an integer",
             'ecode': "INVALID_PARAMETER"
         }, 400)
             
-    if not isinstance(file_path, (bytes, str)):
+    if not isinstance(file_path, str):
         return flask.make_response({
-            'error': 'file path provided is not bytes or str',
+            'error': 'file path provided is not a string',
             'ecode': "INVALID_CONTENT"
         }, 400)
             
     if file_path[0] != "/": 
         file_path: str = "/" + file_path
             
-    response_code = 200
-    result = database.deleted_files.restore_file(
+    response_code: int = 200
+    result: int | str = database.deleted_files.restore_file(
         username, file_path, restore_which)
 
     match result:
@@ -506,15 +571,13 @@ def file_restores():
     return flask.make_response(response, response_code)
 
 
+@APP.post("/api/files/list-deleted")
 @APP.post('/list-deleted')
 def list_deleted():
     global database
 
     if not request.is_json:
-        return flask.make_response({
-            'error': "Provided request must be in a JSON format",
-            'ecode': "415"
-        }, 415)
+        return NOT_JSON_ERROR()
             
     data = request.json
     headers = request.headers
@@ -526,33 +589,30 @@ def list_deleted():
     username: str = database.api_keys.get_key_owner(headers.get('Authorization', ""))
     if username == "INVALID_APIKEY":
         username: str = headers.get('syncServer-Username', '')
-            
-    file_path: str = data.get('file-path', None)
+    
+    file_path: str = data.get('file-path', '')
 
-    if file_path is None:
+    if not file_path:
         return flask.make_response({
             'error': 'No file path provided to read',
             'ecode': 'MISSING_FILEPATH'
         }, 400)
 
-    if not isinstance(file_path, (bytes, str)):
+    if not isinstance(file_path, str):
         return flask.make_response({
-            'error': 'file path provided is not bytes or str',
+            'error': 'file path provided is not a string',
             'ecode': "INVALID_CONTENT"
         }, 400)
             
     if file_path != ":all:" and file_path[0] != "/":
         file_path: str = "/" + file_path
             
-    response_code = 200
-    result = database.deleted_files.list_deleted(
-        username, file_path)
+    response_code: int = 200
+    result: list[str] | dict | str = database.deleted_files.list_deleted(username, file_path)
             
     match result:
         case dict() if file_path == ":all:":
-            response = {
-                'batch': True,
-            }
+            response = {'batch': True}
             response.update(result)
         case list():
             response = {
@@ -582,15 +642,13 @@ def list_deleted():
     return flask.make_response(response, response_code)
 
 
+@APP.post("/api/files/remove-deleted")
 @APP.post('/remove-deleted')
 def remove_deleted():
     global database
 
     if not request.is_json:
-        return flask.make_response({
-            'error': "Provided request must be in a JSON format",
-            'ecode': "415"
-        }, 415)
+        return NOT_JSON_ERROR()
             
     data = request.json
     headers = request.headers
@@ -603,39 +661,40 @@ def remove_deleted():
     if username == "INVALID_APIKEY":
         username: str = headers.get('syncServer-Username', '')
             
-    file_path: bytes | str = data.get('file-path', None)
+    file_path: str = data.get('file-path', '')
 
-    if file_path is None:
+    if not file_path:
         return flask.make_response({
             'error': 'No file path provided to delete',
             'ecode': 'MISSING_FILEPATH'
         }, 400)
 
-    delete_which: int = data.get('delete-which', None)
-    if delete_which is None:
+    delete_which: int = data.get('delete-which', '')
+    if delete_which == '':
         return flask.make_response({
             'error': "delete-which parameter was not found",
             'ecode': "MISSING_PARAMETER"
         }, 400)
 
-    # check if delete_which is 'all' or an int
-    if not (delete_which != ":all:" or isinstance(delete_which, int)):
+    # Check if delete_which is ':all:' or an int
+    if not isinstance(delete_which, int) and delete_which != ":all:":
         return flask.make_response({
             'error': "delete-which parameter can only be int or ':all:'",
             'ecode': "INVALID_PARAMETER"
         }, 400)
-
-    if not isinstance(file_path, (bytes, str)):
+    
+    if not isinstance(file_path, str):
         return flask.make_response({
-            'error': 'file path provided is not bytes or str',
+            'error': 'file path provided is not a string',
             'ecode': "INVALID_CONTENT"
         }, 400)
 
-    response_code = 200
+    response_code: int = 200
+    print(file_path, delete_which)
     if file_path != ":all:" and file_path[0] != "/":
         file_path: str = "/" + file_path
 
-    result = database.deleted_files.true_delete(
+    result: int | str = database.deleted_files.true_delete(
         username, file_path,
         delete_which=delete_which
     )
@@ -679,15 +738,13 @@ def remove_deleted():
     return flask.make_response(response, response_code)
 
 
+@APP.post("/api/files/read")
 @APP.post('/read')
 def file_reads():
     global database
 
     if not request.is_json:
-        return flask.make_response({
-            'error': "Provided request must be in a JSON format",
-            'ecode': "415"
-        }, 415)
+        return NOT_JSON_ERROR()
             
     data = request.json
     headers = request.headers
@@ -700,24 +757,23 @@ def file_reads():
     if username == "INVALID_APIKEY":
         username: str = headers.get('syncServer-Username', '')
             
-    file_path: str = data.get('file-path', None)
-
-    if file_path is None:
+    file_path: str = data.get('file-path', '')
+    if not file_path:
         return flask.make_response({
             'error': 'No file path provided to read',
             'ecode': 'MISSING_FILEPATH'
         }, 400)
 
-    if not isinstance(file_path, (bytes, str)):
+    if not isinstance(file_path, str):
         return flask.make_response({
-            'error': 'file path provided is not bytes or str',
+            'error': 'file path provided is not a string',
             'ecode': "INVALID_CONTENT"
         }, 400)
             
     if file_path[0] != "/": 
         file_path: str = "/" + file_path
 
-    result = database.read_file(username, file_path)
+    result: str | Generator[bytes, None, None] = database.read_file(username, file_path)
     response = None
 
     match result:
@@ -755,15 +811,13 @@ def file_reads():
     return response or flask.make_response(flask.jsonify(err_response), response_code)
         
 
+@APP.post("/api/dirs/create")
 @APP.post('/create-dir')
 def dir_creations():
     global database
 
     if not request.is_json:
-        return flask.make_response({
-            'error': "Provided request must be in a JSON format",
-            'ecode': "415"
-        }, 415)
+        return NOT_JSON_ERROR()
             
     data = request.json
     headers = request.headers
@@ -784,9 +838,9 @@ def dir_creations():
             'ecode': 'MISSING_DIRPATH'
         }, 400)
             
-    if not isinstance(dir_path, (bytes, str)):
+    if not isinstance(dir_path, str):
         return flask.make_response({
-            'error': "Directory path provided is not bytes or string",
+            'error': "Directory path provided is not a string",
             'ecode': "INVALID_CONTENT"
         }, 400)
             
@@ -794,7 +848,7 @@ def dir_creations():
         username, dir_path
     )
 
-    response_code = 200
+    response_code: int = 200
     match result:
         case "DIR_EXISTS":
             response = {
@@ -826,15 +880,13 @@ def dir_creations():
     return flask.make_response(response, response_code)
 
 
+@APP.post("/api/dirs/remove")
 @APP.post('/remove-dir')
 def dir_deletions():
     global database
 
     if not request.is_json:
-        return flask.make_response({
-            'error': "Provided request must be in a JSON format",
-            'ecode': "415"
-        }, 415)
+        return NOT_JSON_ERROR()
             
     data = request.json
     headers = request.headers
@@ -855,9 +907,9 @@ def dir_deletions():
             'ecode': 'MISSING_DIRPATH'
         }, 400)
             
-    if not isinstance(dir_path, (bytes, str)):
+    if not isinstance(dir_path, str):
         return flask.make_response({
-            'error': "Directory path provided is not bytes or string",
+            'error': "Directory path provided is not a string",
             'ecode': "INVALID_CONTENT"
         }, 400)
             
@@ -865,7 +917,7 @@ def dir_deletions():
         username, dir_path
     )
 
-    response_code = 200
+    response_code: int = 200
     match result:
         case "NO_DIR_EXISTS":
             response = {
@@ -897,15 +949,13 @@ def dir_deletions():
     return flask.make_response(response, response_code)
 
 
+@APP.post("/api/dirs/list")
 @APP.post('/list-dir')
 def dir_listing():
     global database
 
     if not request.is_json:
-        return flask.make_response({
-            'error': "Provided request must be in a JSON format",
-            'ecode': "415"
-        }, 415)
+        return NOT_JSON_ERROR()
             
     data = request.json
     headers = request.headers
@@ -918,25 +968,30 @@ def dir_listing():
     if username == "INVALID_APIKEY":
         username: str = headers.get('syncServer-Username', '')
             
-    dir_path: str = data.get('dir-path', None)
-
-    if dir_path is None:
+    dir_path: str = data.get('dir-path', -1)
+    if dir_path == -1:
         return flask.make_response({
             'error': 'No directory path provided to create',
             'ecode': 'MISSING_DIRPATH'
         }, 400)
-            
-    if not isinstance(dir_path, (bytes, str)):
+    if not isinstance(dir_path, str):
         return flask.make_response({
-            'error': "Directory path provided is not bytes or string",
+            'error': "Directory path provided is not a string",
             'ecode': "INVALID_CONTENT"
         }, 400)
-            
+    
+    list_deleted_only: bool = data.get('list-deleted-only', False)
+    if not isinstance(list_deleted_only, bool):
+        return flask.make_response({
+            'error': "'list-deleted-only' can only be boolean",
+            'ecode': "INVALID_CONTENT"
+        })
+    
     result: str | list[str] = database.dirs.list_dir(
-        username, dir_path
+        username, dir_path, list_deleted_only=list_deleted_only
     )
 
-    response_code = 200
+    response_code: int = 200
     match result:
         case "NO_DIR_EXISTS":
             response = {
@@ -965,15 +1020,46 @@ def dir_listing():
     return flask.make_response(flask.jsonify(response), response_code)
 
 
-@APP.post('/api/create-key')
+@APP.get('/api/dirs/get-paths')
+def get_dir_paths():
+    global database
+    headers = request.headers
+
+    verify_result = _verify(headers, _api_permission_type='read')
+    if verify_result != 0:
+        return verify_result
+            
+    username: str = database.api_keys.get_key_owner(headers.get('Authorization', ""))
+    if username == "INVALID_APIKEY":
+        username: str = headers.get('syncServer-Username', '')
+    
+    response = None
+    response_code: int = 200
+
+    result: str | list[str] = database.dirs.get_dir_paths(username)
+    match result:
+        case list():
+            response = {
+                'success': True,
+                'dir-paths': result
+            }
+        case _:
+            logging.error(
+                "[/dirs/get-dir-paths]: dirs.get_dir_paths returned unexpected data: '%s'",
+                result
+            )
+            return SERVER_ERROR()
+    
+    return flask.make_response(response, response_code)
+
+
+@APP.post("/api/create-key")
+@APP.post('/api/keys/create')
 def create_api_key():
     global database
 
     if not request.is_json:
-        return flask.make_response({
-            'error': "Provided request must be in a JSON format",
-            'ecode': "415"
-        }, 415)
+        return NOT_JSON_ERROR()
             
     data = request.json
     headers = request.headers
@@ -1022,11 +1108,11 @@ def create_api_key():
             'ecode': "INVALID_TYPE"
         }, 400)
             
-    result = database.api_keys.create_key(
+    result: str = database.api_keys.create_key(
         username, key_perms, key_name, expires_on
     )
 
-    response_code = 200
+    response_code: int = 200
     response = None
     match result:
         case 'INVALID_KEYPERMS':
@@ -1062,13 +1148,11 @@ def create_api_key():
     return flask.make_response(response, response_code)
 
 
+@APP.post('/api/keys/delete')
 @APP.post('/api/delete-key')
 def delete_api_key():
     if not request.is_json:
-        return flask.make_response({
-            'error': "Provided request must be in a JSON format",
-            'ecode': "415"
-        }, 415)
+        return NOT_JSON_ERROR()
             
     data = request.json
     headers = request.headers
@@ -1093,10 +1177,9 @@ def delete_api_key():
             'ecode': "INVALID_TYPE"
         }, 400)
             
-    result = database.api_keys.delete_key(
-        username, key_name
-    )
-    response_code = 200
+    result: int | str = database.api_keys.delete_key(username, key_name)
+    response_code: int = 200
+
     response = None
     match result:
         case 'INVALID_APIKEY':
@@ -1117,13 +1200,11 @@ def delete_api_key():
     return flask.make_response(response, response_code)
 
 
+@APP.post('/api/keys/list-all')
 @APP.post('/api/list-keys')
 def list_api_keys():
     if not request.is_json:
-        return flask.make_response({
-            'error': "Provided request must be in a JSON format",
-            'ecode': "415"
-        }, 415)
+        return NOT_JSON_ERROR()
     
     headers = request.headers
     verify_result = _verify(headers, _api_permission_type='read')
@@ -1135,10 +1216,9 @@ def list_api_keys():
     if username == "INVALID_APIKEY":
         username: str = headers.get('syncServer-Username', '')
             
-    result = database.api_keys.list_keys(
-        username
-    )
-    response_code = 200
+    result: list | str = database.api_keys.list_keys(username)
+    response_code: int = 200
+    
     response = None
     match result:
         case 'NO_AVAILABLE_APIKEYS':
@@ -1159,6 +1239,51 @@ def list_api_keys():
             )
             return SERVER_ERROR()
             
+    return flask.make_response(response, response_code)
+
+
+@APP.post('/api/keys/get-perms')
+def get_key_perms():
+    if not request.is_json:
+        return NOT_JSON_ERROR()
+    
+    headers = request.headers
+    data = request.json
+
+    verify_result = _verify(headers, _api_permission_type='all')
+    if verify_result != 0:
+        return verify_result
+    
+    api_key: str = data.get('api-key')
+    if not isinstance(api_key, str):
+        return flask.make_response({
+            'error': "API key to check is not a string",
+            'ecode': "INVALID_TYPE"
+        }, 400)
+    
+    result: list | str = database.api_keys.get_key_perms(api_key)
+    response_code: int = 200
+
+    response = None
+    match result:
+        case 'INVALID_APIKEY':
+            response = {
+                'error': "API key provided is invalid.",
+                'ecode': result
+            }
+            response_code = 400
+        case list():
+            response = {
+                'success': True,
+                'key-perms': result
+            }
+        case _:
+            logging.error(
+                "[/api/get-key-perms]: api_keys.get_key_perms returned unexpected data: '%s'",
+                result
+            )
+            return SERVER_ERROR()
+    
     return flask.make_response(response, response_code)
 
 

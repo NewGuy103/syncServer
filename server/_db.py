@@ -34,9 +34,8 @@ import sqlite3
 
 import subprocess
 import tempfile
-import types
-
 import uuid
+
 import secrets
 import logging
 
@@ -492,8 +491,8 @@ class FileDatabase:
         return 0
     
     def dir_checker(self, file_path: str, user_id: str) -> Literal["NO_USER"] | tuple[str]:
-        if not isinstance(file_path, (bytes, str)):
-            raise TypeError("'file_path' must be bytes or str")
+        if not isinstance(file_path, str):
+            raise TypeError("'file_path' must be a string")
         
         if not file_path:
             raise ValueError("'file_path' was not passed in args")
@@ -522,13 +521,13 @@ class FileDatabase:
     
     def add_file(
             self, username: str,
-            file_path: bytes | str,
+            file_path: str,
 
             file_stream: BinaryIO | TextIO,
             chunk_size: int = 50 * 1024 * 1024
     ) -> int | str:
-        if not isinstance(file_path, (bytes, str)):
-            raise TypeError("'file_path' must be bytes or str")
+        if not isinstance(file_path, str):
+            raise TypeError("'file_path' must be a string")
         
         if not isinstance(chunk_size, int):
             raise TypeError("'chunk_size' must be an int")
@@ -620,46 +619,13 @@ class FileDatabase:
 
     def modify_file(
             self, username: str,
-            file_path: bytes | str,
+            file_path: str,
 
             file_stream: BinaryIO | TextIO,
             chunk_size: int = 50 * 1024 * 1024
     ) -> int | str:
-        """
-        Modify an existing file in the database for a specific user.
-
-        Parameters:
-        - username (str): The username of the user modifying the file.
-        - file_path (bytes or str): The path of the file to be modified.
-        - file_stream (BinaryIO or TextIO): The file stream to read the modified file content.
-        - chunk_size (int, optional): The size of each chunk when reading the file stream.
-          Default is 50 MB.
-
-        Returns:
-        - 0: If the file is successfully modified in the database.
-        - "NO_USER": If the specified username is not found in the database.
-        - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
-        - "NO_DIR_EXISTS": If the directory for the file does not exist for the specified user.
-        - "NO_FILE_EXISTS": If the specified file does not exist in the specified directory.
-
-        Raises:
-        - TypeError: If 'file_path' is not of type bytes or str.
-        - IOError: If the file stream is empty.
-
-        Notes:
-        - Checks if 'file_path' is a valid type (bytes or str).
-        - Raises a TypeError if 'file_path' is not of the expected type.
-        - Retrieves the user ID and verifies the user using the provided username and token.
-        - Raises an IOError if the file stream is empty.
-        - Checks if the directory for the file exists for the specified user.
-        - Returns "NO_FILE_EXISTS" if the specified file does not exist in the specified directory.
-        - If encryption is enabled, encrypts the modified file content before updating it in the database.
-        - Uses chunking to handle large file sizes efficiently.
-        - Returns 0 upon successful modification of the file in the database.
-        """
-
-        if not isinstance(file_path, (bytes, str)):
-            raise TypeError("'file_path' must be bytes or str")
+        if not isinstance(file_path, str):
+            raise TypeError("'file_path' must be string")
         
         if not isinstance(chunk_size, int):
             raise TypeError("'chunk_size' must be an int")
@@ -759,39 +725,12 @@ class FileDatabase:
 
     def remove_file(
             self, username: str,
-            file_path: bytes | str,
+            file_path: str,
 
             permanent_delete: bool = False
     ) -> int | str:
-        """
-        Remove an existing file from the database for a specific user.
-
-        Parameters:
-        - username (str): The username of the user removing the file.
-        - file_path (bytes or str): The path of the file to be removed.
-
-        Returns:
-        - 0: If the file is successfully removed from the database.
-        - "NO_USER": If the specified username is not found in the database.
-        - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
-        - "NO_DIR_EXISTS": If the directory for the file does not exist for the specified user.
-        - "NO_FILE_EXISTS": If the specified file does not exist in the specified directory.
-
-        Raises:
-        - TypeError: If 'file_path' is not of type bytes or str.
-
-        Notes:
-        - Checks if 'file_path' is a valid type (bytes or str).
-        - Raises a TypeError if 'file_path' is not of the expected type.
-        - Retrieves the user ID and verifies the user using the provided username and token.
-        - Checks if the directory for the file exists for the specified user.
-        - Returns "NO_FILE_EXISTS" if the specified file does not exist in the specified directory.
-        - Irreversibly removes the file from the 'files' table in the database.
-        - Returns 0 upon successful removal of the file from the database.
-        """
-        
-        if not isinstance(file_path, (bytes, str)):
-            raise TypeError("'file_path' must be bytes or str")
+        if not isinstance(file_path, str):
+            raise TypeError("'file_path' must be string")
         
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
@@ -855,44 +794,11 @@ class FileDatabase:
 
     def read_file(
             self, username: str,
-            file_path: bytes | str,
+            file_path: str,
             chunk_size: int = 50 * 1024 * 1024
     ) -> str | Generator[bytes, None, None]:
-        """
-        Read the content of an existing file from the database for a specific user.
-
-        Parameters:
-        - username (str): The username of the user reading the file.
-        - token (str): The authentication token associated with the user.
-        - file_path (bytes or str): The path of the file to be read.
-        - chunk_size (int, optional): The size of each chunk when reading the file content.
-          Default is 50 MB.
-
-        Returns:
-        -  Generator[bytes, None, None]: A generator yielding file content in chunks.
-        - "NO_USER": If the specified username is not found in the database.
-        - "INVALID_TOKEN": If the provided token does not match the stored token for the user.
-        - "NO_DIR_EXISTS": If the directory for the file does not exist for the specified user.
-        - "NO_FILE_EXISTS": If the specified file does not exist in the specified directory.
-
-        Raises:
-        - TypeError: If 'file_path' is not of type bytes or str.
-
-        Notes:
-        - Checks if 'file_path' is a valid type (bytes or str).
-        - Raises a TypeError if 'file_path' is not of the expected type.
-        - Retrieves the user ID and verifies the user using the provided username and token.
-        - Checks if the directory for the file exists for the specified user.
-        - Returns "NO_FILE_EXISTS" if the specified file does not exist in the specified directory.
-        - Retrieves file information including data ID and length from the 'files' table.
-        - Retrieves file configuration (chunk size, encryption) from the 'files_config' table.
-        - Adjusts the 'chunk_size' to match the stored chunk size used during encryption.
-        - Yields file content in chunks using a generator.
-        - Decrypts the content if encryption is enabled, using the adjusted 'chunk_size.'
-        """
-
-        if not isinstance(file_path, (bytes, str)):
-            raise TypeError("'file_path' must be bytes or str")
+        if not isinstance(file_path, str):
+            raise TypeError("'file_path' must be string")
         
         if not isinstance(chunk_size, int):
             raise TypeError("'chunk_size' must be an int")
@@ -1004,8 +910,8 @@ class DirectoryInterface:
             self, username: str,
             dir_path: str
     ) -> int | str:
-        if not isinstance(dir_path, (bytes, str)):
-            raise TypeError("'dir_path' must be bytes or str")
+        if not isinstance(dir_path, str):
+            raise TypeError("'dir_path' must be string")
         
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
@@ -1052,8 +958,8 @@ class DirectoryInterface:
             self, username: str,
             dir_path: str
     ) -> int | str:
-        if not isinstance(dir_path, (bytes, str)):
-            raise TypeError("'dir_path' must be bytes or str")
+        if not isinstance(dir_path, str):
+            raise TypeError("'dir_path' must be string")
         
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
@@ -1095,30 +1001,33 @@ class DirectoryInterface:
 
     def list_dir(
             self, username: str,
-            dir_path: str
+            dir_path: str, list_deleted_only: bool = False
     ) -> str | list[str]:
-        if not isinstance(dir_path, (bytes, str)):
-            raise TypeError("'dir_path' must be bytes or str")
+        if not isinstance(dir_path, str):
+            raise TypeError("'dir_path' must be string")
+
+        if not isinstance(list_deleted_only, bool):
+            raise TypeError("'list_deleted_only' can only be bool")
         
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
         """, [username])
-        user_data = self.cursor.fetchone()
+        user_data: tuple[str] = self.cursor.fetchone()
 
         if not user_data:
             return "NO_USER"
         
-        user_id = user_data[0]
+        user_id: str = user_data[0]
         self.cursor.execute("""
             SELECT dir_id FROM directories
             WHERE dir_name=? AND user_id=?
         """, [dir_path, user_id])
 
-        found_dir = self.cursor.fetchone()
+        found_dir: tuple[str] = self.cursor.fetchone()
         if not found_dir:
             return "NO_DIR_EXISTS"
         
-        dirs = dir_path.split("/")
+        dirs: list[str] = dir_path.split("/")
         for i, dir_name in enumerate(dirs):
             if i == 0:
                 continue
@@ -1128,16 +1037,48 @@ class DirectoryInterface:
             if not dir_name:
                 return "INVALID_DIR_PATH"
 
-        dir_id = found_dir[0]
+        dir_id: str = found_dir[0]
         self.cursor.execute("""
-            SELECT filename FROM files
+            SELECT filename, data_id FROM files
             WHERE dir_id=? AND user_id=?
         """, [dir_id, user_id])
+        dir_listing: list[tuple[str, str]] = self.cursor.fetchall()
 
-        dir_listing = self.cursor.fetchall()
-        files = [i[0] for i in dir_listing]
+        def is_deleted(file_id):
+            self.cursor.execute("""
+                SELECT data_id FROM deleted_files
+                WHERE data_id=?
+            """, [file_id])
+            delete_data: tuple[str] | None = self.cursor.fetchone()
+            return bool(delete_data) 
+        
+        if list_deleted_only:
+            files: list[str] = [i[0] for i in dir_listing if is_deleted(i[1])]
+        else:
+            files: list[str] = [i[0] for i in dir_listing if not is_deleted(i[1])]
         
         return files
+    
+    def get_dir_paths(self, username: str) -> str | list[str]:
+        self.cursor.execute("""
+            SELECT user_id FROM users WHERE username=?
+        """, [username])
+        user_data: tuple[str] = self.cursor.fetchone()
+
+        if not user_data:
+            return "NO_USER"
+        
+        user_id: str = user_data[0]
+        self.cursor.execute("""
+            SELECT dir_name FROM directories
+            WHERE user_id=?
+        """, [user_id])
+
+        dirs: list[tuple[str]] = self.cursor.fetchall()
+        if not dirs:
+            return "NO_DIRS"  # This means even the root directory (/) is missing
+        
+        return [pathlist[0] for pathlist in dirs]
 
 
 class DeletedFiles:
@@ -1154,24 +1095,24 @@ class DeletedFiles:
         self._cipher_key: bytes | str = parent._cipher_key
         self.cipher_conf: dict = self.conf_secrets['encryption_config']
 
-        self.dir_checker: Callable = parent.dir_checker
+        self.dir_checker = parent.dir_checker
     
     def list_deleted(
             self, username: str,
-            file_path: bytes | str
+            file_path: str
     ) -> str | list[str] | dict:
-        if not isinstance(file_path, (bytes, str)):
-            raise TypeError("'file_path' must be bytes or str")
+        if not isinstance(file_path, str):
+            raise TypeError("'file_path' must be string")
 
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
         """, [username])
-        user_data = self.cursor.fetchone()
+        user_data: tuple[str] = self.cursor.fetchone()
 
         if not user_data:
             return "NO_USER"
 
-        user_id = user_data[0]
+        user_id: str = user_data[0]
 
         if file_path == ":all:":
             self.cursor.execute("""
@@ -1189,7 +1130,7 @@ class DeletedFiles:
                     grouped_data[filename] = [data_id]
 
             # Convert dictionary values to lists of tuples
-            result = [[(key, val) for val in grouped_data[key]] for key in grouped_data]
+            result: list = [[(key, val) for val in grouped_data[key]] for key in grouped_data]
             all_results: dict = {}
 
             for path_and_id_tuple in result:
@@ -1211,11 +1152,11 @@ class DeletedFiles:
             
             return all_results
 
-        dir_exists = self.dir_checker(file_path, user_id)
+        dir_exists: tuple[str] = self.dir_checker(file_path, user_id)
         if not dir_exists:
             return "NO_DIR_EXISTS"
 
-        dir_id = dir_exists[0]
+        dir_id: str = dir_exists[0]
         self.cursor.execute("""
             SELECT data_id FROM files
             WHERE filename=? AND user_id=? AND dir_id=?
@@ -1246,15 +1187,14 @@ class DeletedFiles:
 
     def restore_file(
             self, username: str,
-            file_path: bytes | str,
-            restore_which: int = None
+            file_path: str,
+            restore_which: int = 0
     ) -> str | int:
-        if not isinstance(file_path, (bytes, str)):
-            raise TypeError("'file_path' must be bytes or str")
+        if not isinstance(file_path, str):
+            raise TypeError("'file_path' must be string")
 
-        if not isinstance(restore_which, (int, types.NoneType)):
-            # Why I put types.NoneType and int instead of plain int, is to allow
-            # implicit restore if there's only one file deleted
+        if not isinstance(restore_which, int):
+            # Removed implicit restore
             raise TypeError("'restore_which' must be an int")
         
         self.cursor.execute("""
@@ -1310,11 +1250,17 @@ class DeletedFiles:
 
         # If the value of restore_which is bigger than the length of deleted file ids
         # minus one (since we index starting from zero), then assume out of bounds
-        if isinstance(restore_which, int) and restore_which > len(delete_data) - 1:
+        def in_bounds():
+            if restore_which < 0:
+                return False
+            
+            if restore_which > len(delete_data) - 1:
+                return False
+            
+            return True
+        
+        if not in_bounds():
             return "OUT_OF_BOUNDS"
-
-        if len(delete_data) == 1:
-            restore_which: int = 0  # restore the found one implicitly
 
         # SQLite3 returns the whole list oldest -> latest so we reverse it
         delete_data: list = list(reversed(delete_data))
@@ -1333,11 +1279,11 @@ class DeletedFiles:
     
     def true_delete(
             self, username: str,
-            file_path: bytes | str,
+            file_path: str,
             delete_which: int | Literal[':all:'] = 0
     ) -> str | int:
-        if not isinstance(file_path, (bytes, str)):
-            raise TypeError("'file_path' must be bytes or str")
+        if not isinstance(file_path, str):
+            raise TypeError("'file_path' must be string")
 
         if not (delete_which == ":all:" or isinstance(delete_which, int)):
             raise TypeError("'delete_which' can only be an int or ':all:'")
@@ -1380,25 +1326,34 @@ class DeletedFiles:
                 delete_data.append(del_data_id)
 
                 continue
-
+        
         if not delete_data:
             return "NO_MATCHING_FILES"
 
         # if not deleting all deleted files
-        if file_path != ":all:" and len(delete_data) > 1 and delete_which is None:
+        if delete_which != ":all:" and len(delete_data) > 1 and delete_which is None:
             raise ValueError(
                 "found more than one deleted file but no parameter to delete which file")
 
         # If the value of delete_which is bigger than the length of deleted file ids
         # minus one (since we index starting from zero), then assume out of bounds
-        if isinstance(delete_which, int) and delete_which > len(delete_data) - 1:
+        def in_bounds() -> bool:
+            if delete_which == ":all:":
+                return True  # skip when deleting all versions
+            
+            if delete_which < 0:
+                return False
+            
+            if delete_which > len(delete_data) - 1:
+                return False
+            
+            return True
+        
+        if not in_bounds():
             return "OUT_OF_BOUNDS"
 
-        if len(delete_data) == 1:
-            delete_which: int = 0  # delete the found one implicitly
-
         # SQLite3 returns the whole list oldest -> latest so we reverse it
-        delete_data: list = list(reversed(delete_data))
+        delete_data: list[str] = list(reversed(delete_data))
 
         if delete_which == ":all:":
             with self.db:
@@ -1409,7 +1364,7 @@ class DeletedFiles:
                     """, [file_id_to_delete])
         else:
             with self.db:
-                delete_which_id = delete_data[delete_which]
+                delete_which_id: str = delete_data[delete_which]
                 self.cursor.execute("""
                     DELETE FROM files
                     WHERE data_id=?
@@ -1432,11 +1387,11 @@ class APIKeyInterface:
         self._cipher_key: bytes | str = parent._cipher_key
         self.cipher_conf: dict = self.conf_secrets['encryption_config']
 
-        self.perms_list: list[str] = ['create', 'read', 'update', 'delete']
+        self.perms_list: list[str] = ['create', 'read', 'update', 'delete', 'all']
     
     def _hash_key(self, api_key: str) -> str:
-        if not isinstance(api_key, (bytes, str)):
-            raise TypeError("'api_key' must be str")
+        if not isinstance(api_key, str):
+            raise TypeError("'api_key' must be string")
         
         match api_key:
             case bytes():
@@ -1452,8 +1407,8 @@ class APIKeyInterface:
     def get_key_owner(
         self, api_key: str
     ) -> str:
-        if not isinstance(api_key, (bytes, str)):
-            raise TypeError("'api_key' must be str")
+        if not isinstance(api_key, str):
+            raise TypeError("'api_key' must be a string")
 
         hashed_apikey: str = self._hash_key(api_key)
         self.cursor.execute("""
@@ -1472,7 +1427,7 @@ class APIKeyInterface:
             SELECT username FROM users
             WHERE user_id=?
         """, [user_id])
-        user_data: tuple[bytes] = self.cursor.fetchone()
+        user_data: tuple[str] = self.cursor.fetchone()
         
         if not user_data:
             logging.warning(
@@ -1488,11 +1443,11 @@ class APIKeyInterface:
             self, api_key: str,
             permission_type: str
     ) -> int | str:
-        if not isinstance(api_key, (bytes, str)):
-            raise TypeError("'api_key' must be str")
+        if not isinstance(api_key, str):
+            raise TypeError("'api_key' must be a string")
 
-        if not isinstance(permission_type, (bytes, str)):
-            raise TypeError("'permission_type' must be bytes or str")
+        if not isinstance(permission_type, str):
+            raise TypeError("'permission_type' must be a string")
         
         if permission_type not in self.perms_list:
             return "INVALID_PERMISSION"
@@ -1502,7 +1457,7 @@ class APIKeyInterface:
             SELECT user_id, key_perms FROM user_apikeys
             WHERE api_key=?
         """, [hashed_apikey])
-        perms_data: tuple[bytes] = self.cursor.fetchone()
+        perms_data: tuple[str] = self.cursor.fetchone()
         
         if not perms_data:
             return "INVALID_APIKEY"
@@ -1522,11 +1477,11 @@ class APIKeyInterface:
             key_name: str, 
             expires_on: str
     ) -> str:
-        if not isinstance(username, (bytes, str)):
-            raise TypeError("'username' must be bytes or str")
+        if not isinstance(username, str):
+            raise TypeError("'username' must be a string")
         
-        if not isinstance(key_name, (bytes, str)):
-            raise TypeError("'key_name' must be str")
+        if not isinstance(key_name, str):
+            raise TypeError("'key_name' must be a string")
 
         if not isinstance(key_perms, list):
             raise TypeError("'key_perms' can only be an list")
@@ -1562,7 +1517,7 @@ class APIKeyInterface:
         current_time: datetime = datetime.now()
         gmt8_offset: timedelta = timedelta(hours=8)
         
-        gmt8_time = current_time + gmt8_offset
+        gmt8_time: datetime = current_time + gmt8_offset
         gmt8_time_str = gmt8_time.strftime("%Y-%m-%d %H:%M:%S.%f")
 
         hashed_userid: str = self.cipher_mgr.hash_string(
@@ -1591,11 +1546,11 @@ class APIKeyInterface:
             self, username: str,
             key_name: str,
     ) -> int | str:
-        if not isinstance(username, (bytes, str)):
-            raise TypeError("'username' must be bytes or str")
+        if not isinstance(username, str):
+            raise TypeError("'username' must be a string")
         
-        if not isinstance(key_name, (bytes, str)):
-            raise TypeError("'key_name' must be str")
+        if not isinstance(key_name, str):
+            raise TypeError("'key_name' must be a string")
         
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
@@ -1624,9 +1579,9 @@ class APIKeyInterface:
         
         return 0
 
-    def list_keys(self, username: str) -> str | list:
-        if not isinstance(username, (bytes, str)):
-            raise TypeError("'username' must be bytes or str")
+    def list_keys(self, username: str) -> str | list[str]:
+        if not isinstance(username, str):
+            raise TypeError("'username' must be a string")
         
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
@@ -1647,6 +1602,23 @@ class APIKeyInterface:
             return "NO_AVAILABLE_APIKEYS"
 
         return [key_tuple[0] for key_tuple in key_data]
+    
+    def get_key_perms(self, api_key: str) -> list[str] | str:
+        if not isinstance(api_key, str):
+            raise TypeError("'api_key' must be a string")
+        
+        hashed_apikey: str = self._hash_key(api_key)
+        self.cursor.execute("""
+            SELECT key_perms FROM user_apikeys
+            WHERE api_key=?
+        """, [hashed_apikey])
+        perms_data: tuple[bytes] = self.cursor.fetchone()
+
+        if not perms_data:
+            return "INVALID_APIKEY"
+
+        key_perms: list = msgpack.unpackb(perms_data[0])
+        return key_perms
 
 
 class Main:
@@ -1738,12 +1710,15 @@ class Main:
                 raise TypeError("invalid type to format")
     
     def display_conf(self, formatted_data: str) -> str:
-        with tempfile.NamedTemporaryFile(mode='w+', delete=True) as temp_file:
+        with tempfile.NamedTemporaryFile('w+', delete=True, suffix=".py") as temp_file:
             temp_file.write(formatted_data)
             temp_file.flush()
                 
             try:
-                subprocess.check_call(['/bin/nano', temp_file.name], shell=False)
+                subprocess.check_call(
+                    ['/bin/nano', temp_file.name], 
+                    shell=False
+                )
             except subprocess.CalledProcessError as e:
                 self.parser.exit(1, f'nano threw an error: {e}\n')
             
@@ -1824,7 +1799,7 @@ class Main:
             secrets_is_same: bool = self.db.conf_secrets == edited_conf['secrets']
             vars_is_same: bool = self.db.conf_vars == edited_conf['vars']
             if secrets_is_same and vars_is_same:
-                self.parser.exit(0, "No modifications to configurations\n")
+                self.parser.exit(0, "No modifications to configuration settings\n")
             
             self.db.save_conf(edited_conf['secrets'], edited_conf['vars'])
             self.parser.exit(0, 'Saved configuration successfully\n')

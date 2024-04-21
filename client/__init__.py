@@ -1,4 +1,7 @@
-from .interface import FileInterface, DirInterface, APIKeyInterface
+from .interface import ServerInterface, FileInterface, DirInterface, APIKeyInterface, ClientEncryptionHandler
 
-__all__ = ["FileInterface", "DirInterface", "APIKeyInterface"]
-__version__ = "1.1.0"
+__all__: list = [
+    "ServerInterface", "FileInterface", "DirInterface", 
+    "APIKeyInterface", "ClientEncryptionHandler"
+]
+__version__: str = "1.1.0"
