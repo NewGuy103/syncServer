@@ -16,11 +16,7 @@ from _db import FileDatabase  # use the above import once making setup.py
 __version__: str = "1.1.0"
 APP: flask.Flask = Flask(__name__)
 
-
-if __name__ == '__main__':
-    db_password: str = getpass.getpass(
-        "Enter database password [or empty if not protected]: ")
-    database: FileDatabase = FileDatabase(db_password=db_password)
+database: FileDatabase | None = None
 
 
 def SERVER_ERROR() -> flask.Response:
@@ -45,13 +41,13 @@ def _verify(headers: dict, _api_permission_type: str = '') -> flask.Response | i
 
     global database
 
-    api_key = headers.get('Authorization', '')
+    api_key: str = headers.get('Authorization', '')
     if not isinstance(api_key, str):
         return flask.make_response({
             'error': "Provided API key is not a string",
             'ecode': "INVALID_TYPE"
         }, 400)
-    
+
     if api_key:
         result: int | str = database.api_keys.verify_key(api_key, _api_permission_type)
         response: int | flask.Response = 0
@@ -72,12 +68,20 @@ def _verify(headers: dict, _api_permission_type: str = '') -> flask.Response | i
             case _:
                 logging.error(
                     "[FLASK-API-VERIFY]: API Key verifier function returned unexpected data: '%s'",
-                    result    
+                    result
                 )
                 return SERVER_ERROR()
         
+        is_expired: bool = database.api_keys.check_expired(api_key=api_key)
+        if isinstance(is_expired, bool) and is_expired:
+            return flask.make_response({
+                'error': "API key has expired",
+                'ecode': "EXPIRED_APIKEY"
+            }, 401)
+        
         if _api_permission_type == 'all' and result != "INVALID_APIKEY":
-            return 0  # Allow access from all API keys, do not always use this
+            # Bypass key permission checking
+            return 0
         
         return response
     
@@ -118,7 +122,6 @@ def check_creds():
 
     verify_result = _verify(headers, _api_permission_type='all')
     if verify_result != 0:
-        logging.info(verify_result)
         return verify_result
     
     username: str = headers.get('syncServer-Username')
@@ -162,7 +165,7 @@ def file_uploads():
     username: str = database.api_keys.get_key_owner(headers.get('Authorization', ""))
     if username == "INVALID_APIKEY":
         username: str = headers.get('syncServer-Username', '')
-            
+    
     successful_runs: list[str] = []
     failed_runs: dict[str, str] = {}
 
@@ -233,7 +236,8 @@ def file_uploads():
     response = None
     match len(files):
         case 1 if failed_runs.keys():
-            response = failed_runs
+            first_key: str = list(failed_runs.keys())[0]
+            response = failed_runs[first_key]
         case 1 if successful_runs:
             response = {
                 'batch': False,
@@ -321,7 +325,7 @@ def file_updates():
                     'error': "Directory path does not exist",
                     'ecode': result
                 }
-                response_code = 400
+                response_code: int = 400
             case "NO_FILE_EXISTS":
                 failed_runs[file.name] = {
                     'error': (
@@ -330,7 +334,7 @@ def file_updates():
                     ),
                     'ecode': result
                 }
-                response_code = 404
+                response_code: int = 404
             case 0:
                 successful_runs.append(file.name)
             case _:
@@ -340,22 +344,23 @@ def file_updates():
                 )
                 return SERVER_ERROR()
             
-    response = None
+    response: dict = None
     match len(files):
         case 1 if failed_runs.keys():
-            response = failed_runs
+            first_key: str = list(failed_runs.keys())[0]
+            response: dict[str, str] = failed_runs[first_key]
         case 1 if successful_runs:
-            response = {
+            response: dict[str, bool] = {
                 'batch': False,
                 'success': True
             }
         case _:
-            response = {
+            response: dict[str, bool | list[str] | dict[str, str]] = {
                 'batch': True,
                 'ok': successful_runs,
                 'fail': failed_runs
             }
-            response_code = 200
+            response_code: int = 200
     
     return flask.make_response(response, response_code)
 
@@ -447,10 +452,11 @@ def file_deletes():
                 )
                 return SERVER_ERROR()
             
-    response = None
+    response: dict = None
     match len(filenames):
         case 1 if failed_runs.keys():
-            response = failed_runs
+            first_key: str = list(failed_runs.keys())[0]
+            response: dict[str, str] = failed_runs[first_key]
         case 1 if successful_runs:
             response = {
                 'batch': False,
@@ -463,11 +469,11 @@ def file_deletes():
             }
             response_code = 400
         case _:
-            response = flask.jsonify({
+            response = {
                 'batch': True,
                 'ok': successful_runs,
                 'fail': failed_runs
-            })
+            }
             response_code = 200
                 
     return flask.make_response(response, response_code)
@@ -690,7 +696,6 @@ def remove_deleted():
         }, 400)
 
     response_code: int = 200
-    print(file_path, delete_which)
     if file_path != ":all:" and file_path[0] != "/":
         file_path: str = "/" + file_path
 
@@ -803,7 +808,7 @@ def file_reads():
             response.headers['Content-Disposition'] = f'attachment; filename={filename}'
         case _:
             logging.error(
-                "[/read]: remove_file function returned unexpected data: '%s'",
+                "[/read]: read_file function returned unexpected data: '%s'",
                 result
             )
             return SERVER_ERROR()
@@ -983,7 +988,7 @@ def dir_listing():
     list_deleted_only: bool = data.get('list-deleted-only', False)
     if not isinstance(list_deleted_only, bool):
         return flask.make_response({
-            'error': "'list-deleted-only' can only be boolean",
+            'error': "'list-deleted-only' can only be bool",
             'ecode': "INVALID_CONTENT"
         })
     
@@ -1045,7 +1050,7 @@ def get_dir_paths():
             }
         case _:
             logging.error(
-                "[/dirs/get-dir-paths]: dirs.get_dir_paths returned unexpected data: '%s'",
+                "[/api/dirs/get-paths]: dirs.get_dir_paths returned unexpected data: '%s'",
                 result
             )
             return SERVER_ERROR()
@@ -1127,6 +1132,12 @@ def create_api_key():
                 'ecode': result
             }
             response_code = 400
+        case "DATE_EXPIRED":
+            response = {
+                'error': "Cannot create an already expired API key",
+                'ecode': result
+            }
+            response_code = 400
         case 'APIKEY_EXISTS':
             response = {
                 'error': "An API key with the same name exists.",
@@ -1176,7 +1187,7 @@ def delete_api_key():
             'error': "API key name can only be a string",
             'ecode': "INVALID_TYPE"
         }, 400)
-            
+    
     result: int | str = database.api_keys.delete_key(username, key_name)
     response_code: int = 200
 
@@ -1196,7 +1207,7 @@ def delete_api_key():
                 result
             )
             return SERVER_ERROR()
-            
+
     return flask.make_response(response, response_code)
 
 
@@ -1221,12 +1232,6 @@ def list_api_keys():
     
     response = None
     match result:
-        case 'NO_AVAILABLE_APIKEYS':
-            response = {
-                'error': "No API keys are defined.",
-                'ecode': result
-            }
-            response_code = 404
         case list():
             response = {
                 'success': True,
@@ -1242,7 +1247,7 @@ def list_api_keys():
     return flask.make_response(response, response_code)
 
 
-@APP.post('/api/keys/get-perms')
+@APP.post('/api/keys/get-data')
 def get_key_perms():
     if not request.is_json:
         return NOT_JSON_ERROR()
@@ -1254,35 +1259,80 @@ def get_key_perms():
     if verify_result != 0:
         return verify_result
     
-    api_key: str = data.get('api-key')
+    username: str = database.api_keys.get_key_owner(headers.get('Authorization', ""))
+    if username == "INVALID_APIKEY":
+        username: str = headers.get('syncServer-Username', '')
+    
+    key_name: str = data.get('key-name', '')
+    api_key: str = data.get('api-key', '')
     if not isinstance(api_key, str):
         return flask.make_response({
             'error': "API key to check is not a string",
             'ecode': "INVALID_TYPE"
         }, 400)
     
-    result: list | str = database.api_keys.get_key_perms(api_key)
+    if not isinstance(key_name, str):
+        return flask.make_response({
+            'error': "Key name to check is not a string",
+            'ecode': "INVALID_TYPE"
+        }, 400)
+    
+    if key_name and api_key:
+        return flask.make_response({
+            'error': 'Raw API key and API key name was passed together',
+            'ecode': "APIKEY_AND_KEYNAME"
+        }, 400)
+    
+    if not key_name and not api_key:
+        return flask.make_response({
+            'error': "Raw API key or API key name was not provided",
+            'ecode': "MISSING_APIKEY_OR_KEYNAME"
+        }, 400)
+    
+    # Use API key over key name
+    if api_key:
+        result: list | str = database.api_keys.apikey_get_data(api_key)
+    else:
+        result: list | str = database.api_keys.keyname_get_data(username, key_name)
+    
     response_code: int = 200
+    response: dict | None = None
 
-    response = None
     match result:
         case 'INVALID_APIKEY':
-            response = {
+            response: dict = {
                 'error': "API key provided is invalid.",
                 'ecode': result
             }
-            response_code = 400
+            response_code: int = 400
         case list():
-            response = {
+            response: dict = {
                 'success': True,
-                'key-perms': result
+                'key-data': result
             }
         case _:
             logging.error(
-                "[/api/get-key-perms]: api_keys.get_key_perms returned unexpected data: '%s'",
-                result
+                "[/api/keys/get-data]: api_keys.%s_get_data returned unexpected data: '%s'",
+                f"{'apikey' if api_key else 'keyname'}", result
             )
             return SERVER_ERROR()
+    
+    key_owner: str = database.api_keys.get_key_owner(api_key)
+    if api_key and key_owner != username:
+        # Prevent using an API key that might not belong to that user
+        response: dict = {
+            'error': "API key provided is invalid.",
+            'ecode': "INVALID_APIKEY"
+        }
+        response_code: int = 400
+    
+    if api_key:
+        is_expired: bool = database.api_keys.check_expired(api_key=api_key)
+    else:
+        is_expired: bool = database.api_keys.check_expired(key_name=key_name, username=username)
+    
+    if response_code == 200:
+        response['key-data'].append(is_expired)
     
     return flask.make_response(response, response_code)
 
@@ -1293,8 +1343,11 @@ def api_route():
     return flask.jsonify({'alive': True})
 
 
-def main():
-    flask_route_port: int = os.environ.get('SYNCSERVER_PORT', 8561)
+def main(provided_db: FileDatabase = None) -> flask.Flask:
+    global database
+    if not isinstance(provided_db, FileDatabase):
+        raise TypeError("Provided database is not an instance of _db.FileDatabase")
+    
     logging.basicConfig(
         level=logging.DEBUG,
         format='[%(asctime)s] - [%(levelname)s] - %(message)s',
@@ -1304,8 +1357,15 @@ def main():
             logging.FileHandler('app.log')
         ]
     )
-    APP.run(debug=False, port=flask_route_port)
+    return APP
 
 
 if __name__ == '__main__':
-    main()
+    db_password: str = getpass.getpass(
+        "Enter database password [or empty if not protected]: ")
+    database: FileDatabase = FileDatabase(db_password=db_password)
+
+    _app: flask.Flask = main(database)
+    flask_route_port: int = int(os.environ.get('SYNCSERVER_PORT', 8561))
+
+    _app.run(debug=False, port=flask_route_port)

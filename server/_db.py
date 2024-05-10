@@ -1322,7 +1322,7 @@ class DeletedFiles:
 
             tmp_delete_data: tuple[str] = self.cursor.fetchone()
             if tmp_delete_data:
-                del_data_id = tmp_delete_data[0]
+                del_data_id: str = tmp_delete_data[0]
                 delete_data.append(del_data_id)
 
                 continue
@@ -1487,14 +1487,20 @@ class APIKeyInterface:
             raise TypeError("'key_perms' can only be an list")
         
         for perms in key_perms:
-            if perms not in self.perms_list:
+            # 'all' is used to allow access from all API keys in the _verify function
+            if perms not in self.perms_list or perms == 'all':
                 return "INVALID_KEYPERMS"
         
         try:
-            datetime.strptime(expires_on, "%Y-%m-%d %H:%M:%S")
+            expiry_date: datetime = datetime.strptime(expires_on, "%Y-%m-%d %H:%M:%S")
         except ValueError:
             return "INVALID_DATETIME"
-    
+
+        date_today: datetime = datetime.now()
+        if date_today > expiry_date:
+            # Prevent creating an already expired API key
+            return "DATE_EXPIRED"
+        
         self.cursor.execute("""
             SELECT user_id FROM users WHERE username=?
         """, [username])
@@ -1518,7 +1524,7 @@ class APIKeyInterface:
         gmt8_offset: timedelta = timedelta(hours=8)
         
         gmt8_time: datetime = current_time + gmt8_offset
-        gmt8_time_str = gmt8_time.strftime("%Y-%m-%d %H:%M:%S.%f")
+        gmt8_time_str: str = gmt8_time.strftime("%Y-%m-%d %H:%M:%S.%f")
 
         hashed_userid: str = self.cipher_mgr.hash_string(
             user_id + gmt8_time_str
@@ -1599,26 +1605,113 @@ class APIKeyInterface:
         key_data: tuple[str] = self.cursor.fetchall()
         
         if not key_data:
-            return "NO_AVAILABLE_APIKEYS"
+            return []
 
         return [key_tuple[0] for key_tuple in key_data]
     
-    def get_key_perms(self, api_key: str) -> list[str] | str:
+    def apikey_get_data(self, api_key: str) -> list[list[str], str] | str:
         if not isinstance(api_key, str):
             raise TypeError("'api_key' must be a string")
         
         hashed_apikey: str = self._hash_key(api_key)
         self.cursor.execute("""
-            SELECT key_perms FROM user_apikeys
+            SELECT key_perms, expiry_date FROM user_apikeys
             WHERE api_key=?
         """, [hashed_apikey])
-        perms_data: tuple[bytes] = self.cursor.fetchone()
+        key_data: tuple[bytes, str] = self.cursor.fetchone()
 
-        if not perms_data:
+        if not key_data:
             return "INVALID_APIKEY"
 
-        key_perms: list = msgpack.unpackb(perms_data[0])
-        return key_perms
+        key_perms: list[str] = msgpack.unpackb(key_data[0])
+        expiry_date: str = key_data[1]
+        
+        return [key_perms, expiry_date]
+    
+    def keyname_get_data(self, username: str, key_name: str) -> list[list[str], str] | str:
+        if not isinstance(username, str):
+            raise TypeError("'username' must be a string")
+        
+        if not isinstance(key_name, str):
+            raise TypeError("'key_name' must be a string")
+        
+        self.cursor.execute("""
+            SELECT user_id FROM users WHERE username=?
+        """, [username])
+        user_data: tuple[str] = self.cursor.fetchone()
+        
+        if not user_data:
+            return "NO_USER"
+        
+        user_id: str = user_data[0]
+        self.cursor.execute("""
+            SELECT key_perms, expiry_date FROM user_apikeys
+            WHERE user_id=? AND key_name=?
+        """, [user_id, key_name])
+        key_data: tuple[bytes, str] = self.cursor.fetchone()
+        
+        if not key_data:
+            return "INVALID_APIKEY"
+        
+        key_perms: list[str] = msgpack.unpackb(key_data[0])
+        expiry_date: str = key_data[1]
+        
+        return [key_perms, expiry_date]
+        
+    def check_expired(
+            self, *, api_key: str = '', 
+            key_name: str = '', 
+            username: str = ''
+    ) -> bool | str:
+        if api_key and key_name:
+            raise ValueError("must specify either api_key or key_name only")
+        
+        if not api_key and not key_name:
+            raise ValueError("did not provide api_key or key_name")
+        
+        if key_name and not username:
+            raise ValueError("must provide username if key_name is provided")
+        
+        if not isinstance(api_key, str):
+            raise TypeError("'api_key' must be a string")
+        
+        if not isinstance(key_name, str):
+            raise TypeError("'key_name' must be a string")
+        
+        if not isinstance(username, str):
+            raise TypeError("'username' is not a string")
+        
+        if api_key:
+            hashed_apikey: str = self._hash_key(api_key)
+            self.cursor.execute("""
+                SELECT expiry_date FROM user_apikeys
+                WHERE api_key=?
+            """, [hashed_apikey])
+            expiry_data: tuple[str] = self.cursor.fetchone()
+        else:
+            self.cursor.execute("""
+                SELECT user_id FROM users WHERE username=?
+            """, [username])
+            user_data: tuple[str] = self.cursor.fetchone()
+            
+            if not user_data:
+                return "NO_USER"
+            
+            user_id: str = user_data[0]
+            self.cursor.execute("""
+                SELECT expiry_date FROM user_apikeys
+                WHERE key_name=? AND user_id=?
+            """, [key_name, user_id])
+            expiry_data: tuple[str] = self.cursor.fetchone()
+        
+        if not expiry_data:
+            return "INVALID_APIKEY"
+        
+        expiry_date: datetime = datetime.strptime(expiry_data[0], "%Y-%m-%d %H:%M:%S")
+        current_time: datetime = datetime.now()
+
+        expired: bool = current_time > expiry_date
+        return expired
 
 
 class Main:

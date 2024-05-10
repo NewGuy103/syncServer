@@ -210,20 +210,21 @@ class ServerInterface:
                 headers=self.headers,
                 timeout=10
             )
-        except OSError as e:
-            raise OSError(f"Connection Failed: {str(e)}") from None
+        except Exception:
+            logger.exception("(ServerInterface.__init__): Failed to make authentication request:")
+            raise
         
         json_res: dict = res.json()
 
         auth_verified: str = json_res.get('success')
         ecode: str = json_res.get('ecode')
 
-        if ecode and ecode not in {'INVALID_CREDENTIALS', 'INVALID_APIKEY'}:
+        if ecode and ecode not in {'INVALID_CREDENTIALS', 'INVALID_APIKEY', 'EXPIRED_APIKEY'}:
             emsg: str = json_res.get('error')
-            raise RuntimeError(f"Authorization failed [{ecode}]: {emsg}")
+            raise RuntimeError(f"Authorization failed with error code [{ecode}]: {emsg}")
         
         if not auth_verified:
-            raise ValueError("Credentials passed is invalid")
+            raise ValueError(f"Authorization failed, error code [{ecode}]")
         
         self.server_url: str = server_url
         self.files: _FileInterface = _FileInterface(self)
@@ -264,6 +265,10 @@ class _FileInterface:
 
         Raises:
         - ValueError: If the paths format is incorrect or if a remote path is missing.
+
+        If endpoint is specified, then `modify_remote` is not used, due to `/upload` and
+        `/modify` generally being the same, where `/upload` only creates new files,
+        and `/modify` only updates existing files.
         """
 
         files: dict = {}
@@ -285,7 +290,7 @@ class _FileInterface:
             
             remote_filepath: str = file_paths[1]
             if not remote_filepath:
-                raise ValueError(f"remote path is missing on lis[{i}]t {i}")
+                raise ValueError(f"remote path is missing on list {i}")
             
             if not isinstance(remote_filepath, str):
                 raise TypeError(f"remote file path on list {i} is not a string")
@@ -640,21 +645,38 @@ class _APIKeyInterface:
 
         return json_response
     
-    def get_key_perms(self, api_key: str, endpoint: str = "/api/keys/get-perms") -> list[str] | dict:
+    def get_key_data(
+            self, *, api_key: str = '', 
+            key_name: str = '',
+            endpoint: str = "/api/keys/get-data"
+    ) -> list | dict:
+        if api_key and key_name:
+            raise ValueError("only a raw API key or key name is allowed")
+        
+        if not api_key and not key_name:
+            raise ValueError("a raw API key or key name must be specified")
+        
         if not isinstance(api_key, str):
-            raise TypeError('api key must be a string')
+            raise TypeError("'api_key' must be a string")
+        
+        if not isinstance(key_name, str):
+            raise TypeError("'key_name' must be a string")
+        
+        if api_key:
+            data: dict = {'api-key': api_key}
+        else:
+            data: dict = {'key-name': key_name}
         
         response: requests.Response = requests.post(
             url=self.server_url + endpoint,
-            
             headers=self.headers,
-            json={'api-key': api_key},
+            json=data,
             timeout=5,
         )
         
         json_response: dict = response.json()
         if json_response.get("success"):
-            return json_response.get('key-perms')
+            return json_response.get('key-data')
 
         return json_response
 
