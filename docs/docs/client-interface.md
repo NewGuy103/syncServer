@@ -11,8 +11,6 @@ This uses `requests` to send HTTP POST requests.
 
 ---
 
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#L23)
-
 Provides an interface for interacting with the files in the server with the REST API.
 You can authenticate with either username/password, or an API token.
 
@@ -38,7 +36,6 @@ api_key_client = FileInterface(server_url="http://localhost:5000", api_key="sync
 
 ---
 
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#L47)
 
 **Parameters:**
 
@@ -91,7 +88,6 @@ upload successfully.
 
 ---
 
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#L111)
 
 **Parameters:**
 
@@ -142,7 +138,6 @@ delete successfully.
 
 ---
 
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#L166)
 
 **Parameters:**
 
@@ -172,7 +167,6 @@ It will return `0` if the restore is successful, or `dict` if it fails.
 
 ---
 
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#L190)
 
 **Parameters:**
 
@@ -210,8 +204,6 @@ This will always be in the order of latest -> oldest.
 
 ---
 
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#L216)
-
 **Parameters:**
 
 - **remote_path** ([_str_](https://docs.python.org/3/library/functions.html#str)) - The remote path of the
@@ -240,7 +232,6 @@ It will return `0` if the true delete is successful, or `dict` if it fails.
 
 ---
 
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#L240)
 
 **Parameters:**
 
@@ -266,7 +257,6 @@ It will return the response object's content directly.
 
 ---
 
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#L276)
 
 Provides an interface for interacting with the directories in the server with the REST API.
 You can authenticate with either username/password, or an API token.
@@ -289,7 +279,6 @@ api_key_client = DirInterface(server_url="http://localhost:5000", api_key="syncS
 
 ---
 
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#L300)
 
 **Parameters:**
 
@@ -315,7 +304,6 @@ This will create a directory, allowing files to be put in this directory.
 
 ---
 
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#L334)
 
 **Parameters:**
 
@@ -343,7 +331,6 @@ This will remove a directory and all the files within it.
 
 ---
 
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#L366)
 
 **Parameters:**
 
@@ -369,8 +356,6 @@ This will list the filenames inside the specified directory.
 
 ---
 
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#L398)
-
 Provides an interface for managing API keys in the server with the REST API.
 You can authenticate with either username/password, or an API token.
 
@@ -390,8 +375,6 @@ api_key_client = DirInterface(server_url="http://localhost:5000", api_key="syncS
 ### `create_key`
 
 ---
-
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#L422)
 
 **Parameters:**
 
@@ -421,8 +404,6 @@ The server will not store this API key in plain text, so it will only be viewabl
 
 ---
 
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#L458)
-
 **Parameters:**
 
 - **key_name** ([_str_](https://docs.python.org/3/library/functions.html#str)) - The name of the API key.
@@ -444,8 +425,6 @@ This will remove the API key from the server and make it invalid.
 ### `list_keys`
 
 ---
-
-[[source]](https://github.com/NewGuy103/syncServer/blob/accc19e29af8e712ebcf52405c9ea4545dcb355d/client/interface.py#483)
 
 **Parameters:**
 

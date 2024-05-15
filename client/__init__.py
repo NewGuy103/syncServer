@@ -4,4 +4,4 @@ __all__: list = [
     "ServerInterface", "FileInterface", "DirInterface", 
     "APIKeyInterface", "ClientEncryptionHandler"
 ]
-__version__: str = "1.1.0"
+__version__: str = "1.2.0"

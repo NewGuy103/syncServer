@@ -1,31 +1,3 @@
-"""
-Module providing the FileDatabase class for managing a file storage database
-with user authentication, file operations, and encryption capabilities.
-
-Dependencies:
-- sqlite3: Standard Python library for SQLite database operations.
-- uuid: Standard Python library for generating UUIDs.
-- secrets: Standard Python library for cryptographic operations.
-- logging: Standard Python library for logging.
-- argon2: Argon2 password hashing library (argon2-cffi).
-- cryptography: Cryptography library for encryption operations.
-- msgpack: MessagePack serialization library.
-- pycrypter.CipherManager: Custom module for encryption operations (newguy103-pycrypter).
-- typing: Standard Python library for type hints.
-
-Attributes:
-- __version__ (str): Module version.
-
-Classes:
-- FileDatabase: A class representing a file database with user authentication, file storage,
-  and encryption capabilities.
-
-Note:
-- Ensure that the required dependencies are installed before using the FileDatabase class.
-- The FileDatabase class provides a comprehensive solution for managing files, directories,
-  and user authentication in a secure and encrypted manner.
-"""
-
 import argparse
 import ast
 import getpass
@@ -47,37 +19,26 @@ from pycrypter import CipherManager  # newguy103-pycrypter
 from datetime import datetime, timedelta
 from typing import BinaryIO, Callable, Generator, Literal, TextIO
 
-__version__: str = "1.1.0"
+__version__: str = "1.2.0"
 
 
 class FileDatabase:
-    """
-    A class representing a file database with user authentication, file storage,
-    and encryption capabilities.
-
-    Attributes:
-    - db (sqlite3.Connection): SQLite3 database connection.
-    - cursor (sqlite3.Cursor): SQLite3 database cursor.
-    - pw_hasher (argon2.PasswordHasher): Argon2 password hasher for user password hashing.
-    - cipher_mgr (CipherManager): Manager for encryption-related operations.
-    - _cipher_key (bytes | str): Database encryption key.
-
-    Methods:
-    - __init__(self, db_name='syncServer.db', db_password=b''): Initializes the FileDatabase instance.
-    - _load_conf(self, db_password: bytes | str = ''): Loads the configuration data from the database.
-
-    Note:
-    - The class uses SQLite3 for database operations and includes tables for users, files, directories,
-      configuration, and file configuration.
-    - Encryption configuration is stored securely, and the class provides methods for loading and managing it.
-    - More methods are available for user management, file operations, and directory management.
-    """
-
     def __init__(
-            self, db_path: str = './syncServer.db', 
+            self, db_path: str = '', 
             db_password: bytes | str = b'',
             recovery_mode: bool = False
     ) -> None:
+        if not db_path:
+            data_dir: str = os.environ.get(
+                "XDG_DATA_HOME", 
+                os.path.join(os.path.expanduser("~"), ".local", "share")
+            )
+            
+            db_dir: str = os.path.join(data_dir, "syncServer-server", __version__)
+            os.makedirs(db_dir, exist_ok=True)
+
+            db_path: str = os.path.join(db_dir, 'syncServer.db')
+        
         self.db: sqlite3.Connection = sqlite3.connect(db_path, check_same_thread=False)
         self.cursor: sqlite3.Cursor = self.db.cursor()
 
@@ -1731,7 +1692,6 @@ class Main:
             '--database-path', '-db',
             action='store', 
             nargs='?',
-            default="./syncServer.db",
             metavar='db-path',
             help="Path to syncServer database."
         )
@@ -1759,6 +1719,16 @@ class Main:
             '--set-protection', '-sp',
             action='store_true',
             help="Set the encryption key that the database will use."
+        )
+        self.parser.add_argument(
+            '--add-user', '-aU',
+            action='store_true',
+            help="Create a new user using provided credentials"
+        )
+        self.parser.add_argument(
+            '--remove-user', '-rU',
+            action='store_true',
+            help="Remove an existing user."
         )
 
     def _fmt_data(self, data: dict | list, indent: int = 0) -> str:
@@ -1836,7 +1806,9 @@ class Main:
             recovery_key: bytes = conf_data.get('syncServer-recoveryKey')
 
             if not recovery_key:
-                self.parser.exit(1, "Could not find recovery key entry in config variables\n")
+                self.parser.exit(
+                    1, "Could not find recovery key entry in config variables, is encryption enabled?\n"
+                )
 
             key_password: str = getpass.getpass("Enter the recovery key: ")            
             try:
@@ -1844,7 +1816,7 @@ class Main:
                     recovery_key, password=key_password
                 )
             except cryptography.fernet.InvalidToken:  # type: ignore
-                self.parser.exit(1, "Decrypting recovery key failed\n")
+                self.parser.exit(1, "Decrypting recovery key failed!\n")
             
             self.parser.exit(0, f"Found original key: {original_key}\n")
 
@@ -1859,13 +1831,13 @@ class Main:
             try:
                 edited_conf: dict = ast.literal_eval(edited_conf_data)
             except SyntaxError:
-                self.parser.exit(1, "Invalid configuration syntax\n")
+                self.parser.exit(1, "Invalid configuration syntax, is the syntax in Python?\n")
 
             self.db.save_conf(None, edited_conf)
             if edited_conf == self.db.conf_vars:
-                self.parser.exit(0, "No modifications to configuration variables\n")
+                self.parser.exit(0, "No modifications to configuration variables.\n")
             
-            self.parser.exit(0, "Saved configuration variables successfully\n")
+            self.parser.exit(0, "Saved configuration variables successfully!\n")
         
         # Reach this point only if not recovering database
         self.db: FileDatabase = FileDatabase(
@@ -1884,18 +1856,18 @@ class Main:
             try:
                 edited_conf: dict = ast.literal_eval(edited_conf_data)
             except SyntaxError:
-                self.parser.exit(1, "Invalid configuration syntax\n")
+                self.parser.exit(1, "Invalid configuration syntax, is the syntax in Python?\n")
             
             if 'secrets' not in edited_conf or 'vars' not in edited_conf:
-                self.parser.exit(1, "'secrets' or 'vars' configuration is missing\n")
+                self.parser.exit(1, "'secrets' or 'vars' configuration is missing!\n")
             
             secrets_is_same: bool = self.db.conf_secrets == edited_conf['secrets']
             vars_is_same: bool = self.db.conf_vars == edited_conf['vars']
             if secrets_is_same and vars_is_same:
-                self.parser.exit(0, "No modifications to configuration settings\n")
+                self.parser.exit(0, "No modifications to configuration settings.\n")
             
             self.db.save_conf(edited_conf['secrets'], edited_conf['vars'])
-            self.parser.exit(0, 'Saved configuration successfully\n')
+            self.parser.exit(0, 'Saved configuration successfully!\n')
         
         if args.set_protection:
             conf_data: dict = {
@@ -1909,25 +1881,22 @@ class Main:
                     "Warning: Recovery key file exists in current directory, "
                     "delete or move this file before changing encryption key\n"
                 )
-                self.parser.exit(
-                    message=emsg,
-                    status=1
-                )
+                self.parser.exit(0, emsg)
             
             try:
                 edited_conf: dict = ast.literal_eval(edited_conf_data)
             except SyntaxError:
-                self.parser.exit(1, "Invalid configuration syntax\n")
+                self.parser.exit(1, "Invalid configuration syntax, is the syntax in Python?\n")
 
             if 'cipher_key' not in edited_conf:
-                self.parser.exit(1, "'cipher_key' configuration is missing\n")
+                self.parser.exit(1, "'cipher_key' configuration is missing!\n")
             
             cipher_key: bytes | str = edited_conf['cipher_key']
-            if not isinstance(cipher_key, (bytes, str)):
-                self.parser.exit(1, "Cipher key is not bytes or string\n")
+            if not isinstance(cipher_key, (bytes, str)) and cipher_key is not None:
+                self.parser.exit(1, "Cipher key is not bytes or string!\n")
             
             if not cipher_key and cipher_key is not None:
-                self.parser.exit(1, "Set 'cipher_key' to None to disable protection\n")
+                self.parser.exit(1, "Set 'cipher_key' to None to disable protection!\n")
             
             if self.db.conf_vars['syncServer-encryptionEnabled']:
                 print("Warning: This will not re-encrypt existing data.")
@@ -1941,7 +1910,32 @@ class Main:
             set_protection: bool = bool(cipher_key)
             self.db.set_protection(set_protection, cipher_key)
             
-            self.parser.exit(0, "Saved database protection status\n")
+            self.parser.exit(0, "Saved database protection status!\n")
+
+        if args.add_user:
+            print("Now starting new user configuration!\n")
+            username: str = input("Enter a username: ")
+            password: str = getpass.getpass("Enter a password: ")
+
+            if not username or not password:
+                self.parser.exit(1, "Username or password is empty!\n")
+
+            result: str | int = self.db.add_user(username, password)
+            if result == "USER_EXISTS":
+                self.parser.exit(1, f"User '{username}' already exists!\n")
+            
+            self.parser.exit(0, f"Added new user '{username}'!\n")
+
+        if args.remove_user:
+            username: str = input("Enter the username to delete: ")
+            if not username:
+                self.parser.exit(1, "No username was provided!\n")
+            
+            result: int | str = self.db.remove_user(username)
+            if result == "NO_USER":
+                self.parser.exit(1, "User does not exist!\n")
+
+            self.parser.exit(0, f"Removed user '{username}' and their data successfully!\n")
 
 
 def run_cli():

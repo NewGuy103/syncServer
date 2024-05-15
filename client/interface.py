@@ -1,19 +1,11 @@
 import os
-import secrets
 import logging
-
-import cryptography
 import requests
 
 from typing import Literal
 from datetime import datetime
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives import hashes
-
-
-__version__: str = "1.1.0"
+__version__: str = "1.2.0"
 
 logger: logging.Logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -31,144 +23,6 @@ file_handler.setFormatter(formatter)
 
 logger.addHandler(stream_handler)
 logger.addHandler(file_handler)
-
-
-class ClientEncryptionHandler:
-    def __init__(
-            self, password: bytes | str, 
-            hash_method: hashes.HashAlgorithm = None,
-
-            hash_pepper: bytes = b'', password_pepper: bytes = b''
-    ) -> None:
-        data_dir: str = os.environ.get(
-            "XDG_DATA_HOME", 
-            os.path.join(os.path.expanduser("~"), ".local", "share")
-        )
-        
-        self.app_dir: str = os.path.join(data_dir, "syncServer-client", __version__)
-        os.makedirs(os.path.join(self.app_dir, "encrypted"), exist_ok=True)
-
-        os.makedirs(os.path.join(self.app_dir, "decrypted"), exist_ok=True)
-        os.makedirs(self.app_dir, exist_ok=True)
-        
-        match password:
-            case bytes():
-                pass
-            case str():
-                password: bytes = password.encode('utf-8')
-            case _:
-                raise TypeError("encryption password is not bytes or string")
-        
-        self.__key: bytes = password
-        
-        if not isinstance(hash_pepper, bytes):
-            raise TypeError("hash pepper is not bytes")
-        
-        if not isinstance(password_pepper, bytes):
-            raise TypeError("password pepper is not bytes")
-        
-        if not hash_method:
-            self.hash_method: hashes.SHA3_512 = hashes.SHA3_512()
-        else:
-            self.hash_method: hashes.HashAlgorithm = hash_method
-
-        self.hash_pepper: bytes = hash_pepper
-        self.pw_pepper: bytes = password_pepper
-
-    def encrypt_file(
-            self, filename: str, 
-            associated_data: bytes = b'',
-            
-            chunk_size: int = 50 * 1024 * 1024
-    ) -> str:
-        """
-        Return encrypted file's filename as output: 
-        `{filename}-encrypted-{random_hex(32)}{file_extension}`.
-        """
-        if not os.path.isfile(filename):
-            raise FileNotFoundError(f"Not a file: {filename}")
-        
-        if not isinstance(chunk_size, int) or (isinstance(chunk_size, int) and chunk_size <= 0):
-            raise ValueError("chunk size must be a positive integer")
-
-        salt: bytes = secrets.token_bytes(32)
-        kdf: PBKDF2HMAC = PBKDF2HMAC(
-            algorithm=self.hash_method,
-            length=32,
-            salt=salt + self.hash_pepper,
-            iterations=100_000
-        )
-        
-        aes_key: bytes = kdf.derive(self.pw_pepper + self.__key)
-        aes: AESGCM = AESGCM(aes_key)
-
-        file_name, file_ext = os.path.splitext(filename)
-        fname_token: str = secrets.token_hex(12)
-
-        out_fname: str = f"{fname_token}{file_name}{file_ext}"
-        full_fname: str = os.path.join(self.app_dir, "encrypted", out_fname)
-
-        with open(filename, "rb") as in_file, open(full_fname, 'wb') as out_file:
-            chunk: bytes = in_file.read(chunk_size)
-            out_file.write(salt)
-
-            nonce: bytes = secrets.token_bytes(12)
-            while chunk:
-                chunk_encrypted: bytes = aes.encrypt(nonce, chunk, associated_data)
-                out_file.write(nonce + chunk_encrypted)
-
-                chunk: bytes = in_file.read(chunk_size)
-                nonce: bytes = secrets.token_bytes(12)
-
-        return os.path.abspath(full_fname)
-    
-    def decrypt_file(
-            self, filename: str, 
-            associated_data: bytes = b'', 
-            
-            chunk_size: int = 50 * 1024 * 1024
-    ) -> str:
-        if not os.path.isfile(filename):
-            raise FileNotFoundError(f"Not a file: {filename}")
-        
-        if not isinstance(chunk_size, int) or (isinstance(chunk_size, int) and chunk_size <= 0):
-            raise ValueError("chunk size must be a positive integer")
-        
-        fname_token: str = secrets.token_hex(12)
-        
-        out_fname: str = f"{fname_token}{os.path.basename(filename)}"
-        full_fname: str = os.path.join(self.app_dir, "decrypted", out_fname)
-
-        with open(filename, 'rb') as file, open(full_fname, 'wb') as out_file:
-            salt: bytes = file.read(32)
-            kdf: PBKDF2HMAC = PBKDF2HMAC(
-                algorithm=self.hash_method,
-                length=32,
-                salt=salt + self.hash_pepper,
-                iterations=100_000
-            )
-
-            aes_key: bytes = kdf.derive(self.pw_pepper + self.__key)
-            aes: AESGCM = AESGCM(aes_key)
-
-            nonce: bytes = file.read(12)
-            chunk: bytes = file.read(chunk_size + 16)
-
-            while chunk:
-                try:
-                    chunk_decrypted: bytes = aes.decrypt(nonce, chunk, associated_data)
-                except cryptography.exceptions.InvalidTag:
-                    logger.exception("[decrypt_file]: File decryption for file '%s' failed:", file.name)
-                    os.remove(full_fname)
-
-                    raise
-                
-                out_file.write(chunk_decrypted)
-
-                nonce: bytes = file.read(12)
-                chunk: bytes = file.read(chunk_size + 16)
-        
-        return full_fname
 
 
 class ServerInterface:
@@ -272,7 +126,10 @@ class _FileInterface:
         """
 
         files: dict = {}
-        route: str = endpoint or ("/upload" if not modify_remote else "/modify")
+        route: str = endpoint or (
+            "/api/files/upload" if not modify_remote 
+            else "/api/files/modify"
+        )
 
         for i, file_paths in enumerate(paths):
             if len(file_paths) != 2:
@@ -451,31 +308,24 @@ class _FileInterface:
 
         return json_data
 
-    def read(self, remote_path: str, endpoint: str = "/read") -> dict | bytes:
-        """
-        Read the contents of a file from the SyncServer.
-
-        Parameters:
-        - remote_path (bytes or str): Remote path of the file to be read.
-        - endpoint (str, optional): API endpoint for reading. Default is "/read".
-
-        Returns:
-        - Union[Dict[str, Any], bytes]:
-          - If the content is in JSON format, returns the parsed JSON response.
-          - If the content is binary, returns the binary content.
-
-        Raises:
-        - TypeError: If remote path is not bytes or str.
-        """
-
+    def read(
+            self, remote_path: str, output_path: str,
+            chunk_size: int = 10 * 1024 * 1024, endpoint: str = "/read"
+    ) -> dict | int:
         if not isinstance(remote_path, str):
             raise TypeError("remote path must be a string")
 
+        if not isinstance(output_path, str):
+            raise TypeError("output path must be a string")
+        
+        if os.path.isfile(output_path):
+            raise FileExistsError(f"File exists, cannot proceed: {output_path}")
+        
         response: requests.Response = requests.post(
             url=self.server_url + endpoint,
             headers=self.headers,
             json={"file-path": remote_path},
-            timeout=5,
+            timeout=5, stream=True
         )
         
         content_type: str = response.headers.get("Content-Type", "")
@@ -483,7 +333,15 @@ class _FileInterface:
             json_response = response.json()
             return json_response
 
-        return response.content
+        with open(output_path, 'wb') as file:
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    file.write(chunk)
+                    continue
+
+                break
+
+        return 0
 
 
 class _DirInterface:

@@ -15,7 +15,7 @@ from cui import (
     Ui_DeletedFilesDialog, Ui_DirManagerDialog,
     Ui_APIKeyManagerDialog, Ui_APIKeyCreateDialog
 )
-from interface import ServerInterface, ClientEncryptionHandler, logger
+from interface import ServerInterface, logger
 
 
 def make_msgbox(
@@ -37,7 +37,6 @@ def make_msgbox(
 class FileManagerDialog(QDialog):
     def __init__(
             self, interface: ServerInterface, 
-            cipher_handler: ClientEncryptionHandler | None = None,
             parent: "MainApp" = None
     ) -> None:
         super().__init__()
@@ -45,7 +44,6 @@ class FileManagerDialog(QDialog):
         self.ui.setupUi(self)
 
         self.interface: ServerInterface = interface
-        self.cipher: ClientEncryptionHandler | None = cipher_handler
 
         self.parent: MainApp = parent
         self.parent_widgets: dict[str, QListWidget] = parent.list_widgets
@@ -151,7 +149,7 @@ class FileManagerDialog(QDialog):
             )
             msgbox.exec_()
             return
-        
+
         remote_path: str = remote_path.replace("%n%", os.path.basename(local_path))
         result: int | dict[str, dict[str, str]] = self.interface.files.upload([[local_path, remote_path]])
 
@@ -324,25 +322,23 @@ class FileManagerDialog(QDialog):
             msgbox.exec_()
             return
         
-        result: bytes = self.interface.files.read(remote_path)
+        try:
+            result: int | dict = self.interface.files.read(remote_path, local_path)
+        except OSError as exc:
+            msgbox = make_msgbox(
+                "syncServer", "Save Failed with Error",
+                extra_text=f"Failed to save downloaded file to [{local_path}]: {str(exc)}",
+                icon=QMessageBox.Critical
+            )
+            msgbox.exec_()
+            return
+
         if not isinstance(result, dict):
-            try:
-                with open(local_path, 'wb') as f:
-                    f.write(result)
-            except OSError as exc:
-                msgbox = make_msgbox(
-                    "syncServer", "Save Failed",
-                    extra_text=f"Failed to save downloaded file to [{local_path}]: {str(exc)}"
-                )
-                msgbox.exec_()
-                return
-            
             msgbox = make_msgbox(
                 "syncServer", "Download Successful", 
                 extra_text=f"Successfully saved [{remote_path}] as [{local_path}]"
             )
-            msgbox.exec_()
-            
+            msgbox.exec_()    
             return
         
         ecode: str = result.get('ecode')
@@ -357,7 +353,7 @@ class FileManagerDialog(QDialog):
                 msgbox_msg = f"Failed to upload due to error code [{ecode}]: {emsg}"
         
         msgbox = make_msgbox(
-            "syncServer", "Delete Failed",
+            "syncServer", "Download Failed",
             extra_text=msgbox_msg
         )
         msgbox.exec_()
@@ -367,7 +363,6 @@ class FileManagerDialog(QDialog):
 class DirManagerDialog(QDialog):
     def __init__(
             self, interface: ServerInterface, 
-            cipher_handler: ClientEncryptionHandler | None = None,
             parent: "MainApp" = None
     ) -> None:
         super().__init__()
@@ -376,7 +371,6 @@ class DirManagerDialog(QDialog):
         self.ui.setupUi(self)
 
         self.interface: ServerInterface = interface
-        self.cipher: ClientEncryptionHandler | None = cipher_handler
 
         self.parent: MainApp = parent
         self.list_widgets: dict = parent.list_widgets
@@ -671,7 +665,6 @@ class DirManagerDialog(QDialog):
 class DeletedFilesDialog(QDialog):
     def __init__(
             self, interface: ServerInterface, 
-            cipher_handler: ClientEncryptionHandler | None = None,
             parent: "MainApp" = None
     ) -> None:
         super().__init__()
@@ -680,7 +673,6 @@ class DeletedFilesDialog(QDialog):
         self.ui.setupUi(self)
 
         self.interface: ServerInterface = interface
-        self.cipher: ClientEncryptionHandler | None = cipher_handler
 
         self.parent: MainApp = parent
         self.list_widgets: dict = parent.list_widgets
@@ -1028,7 +1020,6 @@ class DeletedFilesDialog(QDialog):
 class APIKeyManagerDialog(QDialog):
     def __init__(
             self, interface: ServerInterface, 
-            cipher_handler: ClientEncryptionHandler | None = None,
             parent: "MainApp" = None
     ) -> None:
         super().__init__()
@@ -1036,7 +1027,6 @@ class APIKeyManagerDialog(QDialog):
         self.ui.setupUi(self)
 
         self.interface: ServerInterface = interface
-        self.cipher: ClientEncryptionHandler | None = cipher_handler
 
         self.parent: MainApp = parent
         self.key_info: list = parent.key_info
@@ -1378,8 +1368,6 @@ class StartLogin(QMainWindow):
         self.perms: list[str] | str = None
 
         self.interface: ServerInterface | None = None
-        self.cipher: ClientEncryptionHandler | None = None
-
         self.initUI()
     
     def initUI(self):
@@ -1496,24 +1484,7 @@ class StartLogin(QMainWindow):
             self.key_info: list = []
 
             self.username: str = username
-        
-        cse_checked: bool = self.loginUI.clientEncryptionCheckbox.isChecked()
-        cse_password: str = self.loginUI.encryptionPasswordInput.text()
 
-        # work on this
-        if cse_checked and cse_password:
-            self.cipher: ClientEncryptionHandler = ClientEncryptionHandler(cse_password)
-        elif cse_checked and not cse_password:
-            msgbox: QMessageBox = make_msgbox(
-                title="syncServer", text="Client Warning",
-                extra_text="No encryption password was provided, disabling client side encryption!",
-                icon=QMessageBox.Warning
-            )
-            msgbox.exec_()
-            self.cipher: None = None
-        else:
-            self.cipher: None = None
-        
         self.close()
         self.main_app = MainApp(self)
 
@@ -1533,8 +1504,7 @@ class MainApp(QMainWindow):
         self.perms: list[str] = parent.perms
         
         self.key_info: list = parent.key_info
-        self.cipher: ClientEncryptionHandler = parent.cipher
-
+        
         self.interface: ServerInterface = parent.interface
         self.clientUI: Ui_MainWindow = Ui_MainWindow()
 
