@@ -16,7 +16,7 @@ import cryptography
 import msgpack
 
 from pycrypter import CipherManager  # newguy103-pycrypter
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import BinaryIO, Callable, Generator, Literal, TextIO
 
 __version__: str = "1.2.0"
@@ -1204,11 +1204,7 @@ class DeletedFiles:
 
         if not delete_data:
             return "FILE_NOT_DELETED"
-
-        if len(delete_data) > 1 and restore_which is None:
-            raise ValueError(
-                "found more than one deleted file but no parameter to restore which file")
-
+        
         # If the value of restore_which is bigger than the length of deleted file ids
         # minus one (since we index starting from zero), then assume out of bounds
         def in_bounds():
@@ -1290,11 +1286,6 @@ class DeletedFiles:
         
         if not delete_data:
             return "NO_MATCHING_FILES"
-
-        # if not deleting all deleted files
-        if delete_which != ":all:" and len(delete_data) > 1 and delete_which is None:
-            raise ValueError(
-                "found more than one deleted file but no parameter to delete which file")
 
         # If the value of delete_which is bigger than the length of deleted file ids
         # minus one (since we index starting from zero), then assume out of bounds
@@ -1481,15 +1472,9 @@ class APIKeyInterface:
         if key_data:
             return "APIKEY_EXISTS"
         
-        current_time: datetime = datetime.now()
-        gmt8_offset: timedelta = timedelta(hours=8)
-        
-        gmt8_time: datetime = current_time + gmt8_offset
-        gmt8_time_str: str = gmt8_time.strftime("%Y-%m-%d %H:%M:%S.%f")
+        salt: bytes = secrets.token_hex(32)
+        hashed_userid: str = self.cipher_mgr.hash_string(user_id + salt)
 
-        hashed_userid: str = self.cipher_mgr.hash_string(
-            user_id + gmt8_time_str
-        )
         api_key: str = f"syncServer-{hashed_userid}"
         hashed_apikey: str = self._hash_key(api_key)
         with self.db:
