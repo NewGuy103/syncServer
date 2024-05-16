@@ -10,7 +10,7 @@ The base URL for all API endpoints is:
 http://localhost:$SYNCSERVER_PORT
 ```
 
-All the endpoints only accept JSON (except for `/upload` and `/modify`).
+All the endpoints only accept JSON (except for `/api/files/upload` and `/api/files/modify`).
 
 ## Authentication
 
@@ -36,13 +36,30 @@ Failing to authenticate or providing invalid credentials will result in these re
 - **INVALID_CREDENTIALS:**
   Your username or password is incorrect.
 
-## File Endpoints
-
-### `/upload`
+### Authentication Endpoint
 
 ---
 
-Send a file to the server.
+Endpoint: `/auth/check`
+
+API key permission required: any
+
+This endpoint is used by clients to check if the username/password or API key credentials is valid.
+
+**Parameters:**
+
+This is a `GET` endpoint, so no parameters are required.
+
+
+## File Endpoints
+
+These endpoints are under the `/api/files` path.
+
+### `/api/files/upload`
+
+---
+
+Upload a file to the server.
 
 API key permission required: `create`
 
@@ -70,7 +87,7 @@ API key permission required: `create`
 - **FILE_EXISTS:** The file already exists on the server.
     - The server has detected a file with the same name exists on the server, so it will not write to prevent data being overwritten. The `/modify` endpoint writes to existing files on the server.
 
-### `/modify`
+### `/api/files/modify`
 
 ---
 
@@ -97,9 +114,10 @@ API key permission required: `update`
     - Within the parameter name, you can put the directory name in the syntax of a Unix path. If the directory path does not exist, then it will not continue writing: `/no-such-dir/remote-path`.
 
 - **NO_FILE_EXISTS:** The file does not exist on the server.
-    - The server could not find a file with the same name exists on the server, so it will not write. The `/upload` endpoint writes to new files to the server.
+    - The server could not find a file with the same name exists on the server, so it will not write. 
+    The `/api/files/upload` endpoint writes to new files to the server.
 
-### `/delete`
+### `/api/files/delete`
 
 ---
 
@@ -122,7 +140,8 @@ API key permission required: `delete`
     - Within the parameter name, you can put the directory name in the syntax of a Unix path. If the directory path does not exist, then it will not continue writing: `/no-such-dir/remote-path`.
 
 - **NO_FILE_EXISTS:** The file does not exist on the server.
-    - The server could not find a file with the same name exists on the server, so it will not write. The `/upload` endpoint writes to new files to the server.
+    - The server could not find a file with the same name exists on the server, so it will not write. 
+    The `/api/files/upload` endpoint writes to new files to the server.
 
 - **EMPTY_PATHLIST:** The file path list is empty.
     - This means that the provided list has no items. This can happen when passing the wrong data type into the list, and the server ends up filtering it, making the list have zero items.
@@ -136,7 +155,7 @@ API key permission required: `delete`
 - **INVALID_CONTENT:** The `file-paths` parameter is not a list.
     - Check if the JSON value is a list/array.
 
-### `/restore`
+### `/api/files/restore`
 
 ---
 
@@ -148,7 +167,7 @@ API key permission required: `update`
 
 - `file-path`: The file path to restore.
 - `restore-which`: An integer indicating the version of the file to restore. This uses `latest -> oldest` setup
-    where `0` is the latest deleted file, and it counts up from that. See `/list-deleted` for information.
+    where `0` is the latest deleted file, and it counts up from that. See `/api/files/list-deleted` for information.
   
 **Error Codes and Meaning:**
 
@@ -178,7 +197,7 @@ API key permission required: `update`
 - **INVALID_CONTENT:** The `file-path` parameter is not a string.
     - Check if the JSON value is a string.
 
-### `/list-deleted`
+### `/api/files/list-deleted`
 
 ---
 
@@ -207,7 +226,7 @@ API key permission required: `read`
 - **INVALID_CONTENT:** The `file-path` parameter is not a string.
     - Check if the JSON value is a string.
 
-### `/remove-deleted`
+### `/api/files/remove-deleted`
 
 ---
 
@@ -222,7 +241,7 @@ API key permission required: `delete`
     where `0` is the latest deleted file, and it counts up from that. 
     
     Optionally, you can also set this to `:all:` to delete all matching files that were 
-    marked as deleted. See `/list-deleted` for information.
+    marked as deleted. See `/api/files/list-deleted` for information.
 
 **Error Codes and Meaning:**
 
@@ -249,7 +268,7 @@ API key permission required: `delete`
     - This means you tried to delete a file version that wasn't listed. (e.g. deleting one file
     but trying to delete the second deleted version, which does not exist)
   
-### `/read`
+### `/api/files/read`
 
 ---
 
@@ -275,14 +294,17 @@ API key permission required: `read`
     - Within the parameter name, you can put the directory name in the syntax of a Unix path. If the directory path does not exist, then it will not continue writing: `/no-such-dir/remote-path`.
 
 - **NO_FILE_EXISTS:** The file does not exist on the server.
-    - The server could not find a file with the same name exists on the server, so it will not write. The `/upload` endpoint writes to new files to the server.
+    - The server could not find a file with the same name exists on the server, so it will not write. The 
+    `/api/files/upload` endpoint writes to new files to the server.
 
 
 ## Directory Endpoints
 
+These endpoints are under the `/api/dirs` path.
+
 ---
 
-### `/create-dir`
+### `/api/dirs/create`
 
 ---
 
@@ -314,13 +336,13 @@ API key permission required: `create`
 - **INVALID_DIR_PATH:** The directory path is malformed or invalid.
     - The directory path could have characters before the first forward slash (like `chars/dir1`) and is treated as malformed.
 
-### `/remove-dir`
+### `/api/dirs/remove`
 
 ---
 
 Delete a directory and all it's files. 
 
-*Currently in version 1.1.0, this permanently deletes the directory, and does not mark them as deleted.* 
+*Since version 1.1.0, this permanently deletes the directory, and does not mark them as deleted.* 
 *Also applies to deleted files within the directory.*
 
 API key permission required: `delete`
@@ -347,19 +369,20 @@ API key permission required: `delete`
 - **INVALID_DIR_PATH:** The directory path is malformed or invalid.
     - The directory path could have characters before the first forward slash (like `chars/dir1`) and is treated as malformed.
 
-### `/list-dir`
+### `/api/dirs/list`
 
 ---
 
 List all the files inside a directory.
 
-*Currently in version 1.1.0, this does not list subfolders.*
+*Since version 1.1.0, this does not list subdirectories.*
 
 API key permission required: `read`
 
 **Parameters:**
 
 - `dir-path`: Directory path to list.
+- `list-deleted-only`: This allows you to either list deleted files only, or list non-deleted files only.
 
 **Error Codes and Meaning:**
 
@@ -375,11 +398,27 @@ API key permission required: `read`
 - **INVALID_DIR_PATH:** The directory path is malformed or invalid.
     - The directory path could have characters before the first forward slash (like `chars/dir1`) and is treated as malformed.
 
-## API Key Endpoints
+### `/api/dirs/get-paths`
 
 ---
 
-### `/api/create-key`
+List every directory path created.
+
+API key permission required: `read`
+
+This is an endpoint that normally should not return an error. The only time this fails is due to an internal server error.
+
+**Parameters:**
+
+This is a `GET` endpoint, so no parameters are required.
+
+## API Key Endpoints
+
+These endpoints are under the `/api/keys` path.
+
+---
+
+### `/api/keys/create`
 
 ---
 
@@ -415,11 +454,11 @@ API key permission required: `create`
 - **APIKEY_EXISTS:** Another API key exists with the same name.
     - Another API key was created before. You can rename the key or delete the original key.
 
-### `/api/delete-key`
+### `/api/keys/delete`
 
 ---
 
-Delete an API key and render it unusable.
+Delete an API key and invalidates the raw API key.
 
 API key permission required: `delete`
 
@@ -438,17 +477,42 @@ API key permission required: `delete`
 - **INVALID_APIKEY:** The API key is invalid or does not exist.
     - This means that the API key with the name provided does not exist, or is invalid.
 
-### `/api/list-keys`
+### `/api/keys/list-all`
 
 ---
 
 List API key names. **This will not list the raw API keys.**
 
+This is an endpoint that normally should not return an error. The only time this fails is due to an internal server error.
+
 API key permission required: `read`
+
+### `/api/keys/get-data`
+
+---
+
+Get the data of an API key using either a raw API key or the API key name.
+
+API key permission required: any
+
+**Parameters:**
+
+- `api-key`: The raw API key. Cannot be used with `key-name`.
+- `key-name`: The API key name. Cannot be used with `api-key`.
 
 **Error Codes and Meaning:**
 
-- **NO_AVAILABLE_APIKEYS:** No API keys exist.
-    - This means that you have not created any API keys yet or deleted all your keys.
+- **INVALID_TYPE**: Wrong content type.
+    - This means that the `api-key` or `key-name` parameter is not a string.
+
+- **APIKEY_AND_KEYNAME**: Specified an API key name and raw API key.
+    - This means that you tried to specify the `api-key` and `key-name` parameter together.
+
+- **MISSING_APIKEY_OR_KEYNAME**: No keys specified.
+    - This means that `api-key` or `key-name` is missing.
+
+- **INVALID_APIKEY:** The API key is invalid or does not exist.
+    - This means that the raw API key or API key with the name provided does not exist, or is invalid.
+    This can also be returned when you attempt to access the raw API key of another user.
 
 ---

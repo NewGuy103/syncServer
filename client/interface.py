@@ -182,7 +182,7 @@ class _FileInterface:
         self, 
         remote_paths: list[str] | tuple[str],
         true_delete: bool = False,
-        endpoint: str = "/delete",
+        endpoint: str = "/api/files/delete",
     ) -> int | tuple[list, dict]:
         """
         Remove files or directories from the SyncServer.
@@ -233,10 +233,9 @@ class _FileInterface:
         return ok_uploads, failed_uploads
 
     def restore(
-        self,
-        remote_path: str,
+        self, remote_path: str,
         restore_which: int = 0,
-        endpoint: str = "/restore",
+        endpoint: str = "/api/files/restore",
     ) -> int | dict:
         if not isinstance(remote_path, str):
             raise TypeError("remote path must be a string")
@@ -258,7 +257,7 @@ class _FileInterface:
         return json_data
 
     def list_deleted(
-        self, remote_path: str, endpoint: str = "/list-deleted"
+        self, remote_path: str, endpoint: str = "/api/files/list-deleted"
     ) -> list | dict:
         if not isinstance(remote_path, str):
             raise TypeError("remote path must be a string")
@@ -286,7 +285,7 @@ class _FileInterface:
         self,
         remote_path: str,
         delete_which: int | Literal[":all:"],
-        endpoint: str = "/remove-deleted",
+        endpoint: str = "/api/files/remove-deleted",
     ) -> int | dict:
         if not isinstance(remote_path, str):
             raise TypeError("remote path must be a string")
@@ -310,7 +309,7 @@ class _FileInterface:
 
     def read(
             self, remote_path: str, output_path: str,
-            chunk_size: int = 10 * 1024 * 1024, endpoint: str = "/read"
+            chunk_size: int = 10 * 1024 * 1024, endpoint: str = "/api/files/read"
     ) -> dict | int:
         if not isinstance(remote_path, str):
             raise TypeError("remote path must be a string")
@@ -351,7 +350,7 @@ class _DirInterface:
         return
     
     def create(
-        self, dir_path: str, endpoint: str = "/create-dir"
+        self, dir_path: str, endpoint: str = "/api/dirs/create"
     ) -> int | dict:
         if not isinstance(dir_path, str):
             raise TypeError("directory path must be a string")
@@ -369,7 +368,7 @@ class _DirInterface:
 
         return json_response
 
-    def delete(self, dir_path: str, endpoint: str = "/remove-dir") -> int | dict:
+    def delete(self, dir_path: str, endpoint: str = "/api/dirs/remove") -> int | dict:
         if not isinstance(dir_path, str):
             raise TypeError("directory path must be a string")
 
@@ -389,7 +388,7 @@ class _DirInterface:
     def list_dir(
             self, dir_path: str, 
             list_deleted_only: bool = False,
-            endpoint: str = "/list-dir"
+            endpoint: str = "/api/dirs/list"
     ) -> list | dict:
         if not isinstance(dir_path, str):
             raise TypeError("directory path must be a string")
@@ -435,7 +434,7 @@ class _APIKeyInterface:
             key_permisions: list[str], 
 
             key_expiry_date: str,
-            endpoint: str = "/api/create-key"
+            endpoint: str = "/api/keys/create"
     ) -> str | dict:
         if not isinstance(key_name, str):
             raise TypeError("key name must be a string")
@@ -470,7 +469,7 @@ class _APIKeyInterface:
     
     def delete_key(
             self, key_name: str, 
-            endpoint: str = "/api/delete-key"
+            endpoint: str = "/api/keys/delete"
     ) -> int | dict:
         if not isinstance(key_name, str):
             raise TypeError("key name must be a string")
@@ -489,7 +488,7 @@ class _APIKeyInterface:
 
         return json_response
     
-    def list_keys(self, endpoint: str = "/api/list-keys") -> list | dict:
+    def list_keys(self, endpoint: str = "/api/keys/list-all") -> list | dict:
         response: requests.Response = requests.post(
             url=self.server_url + endpoint,
             headers=self.headers,

@@ -4,15 +4,16 @@
 
 Note from me: This is just a hobby project, and not supposed to be a production application. It's just a way to improve my skills and have something to work on.
 
-Current latest version: 1.1.1
+Current latest version: 1.2.0
 
 ```python
->>> from syncserver.client import FileInterface
->>> file_interface = FileInterface('http://localhost:8561', 'username', 'password')
->>> file_interface.upload(['/path/to/local/file', '/remote/path'])
+>>> from syncserver.client import ServerInterface
+>>> server_interface = ServerInterface(
+    'http://localhost:8561', username='username', password='password')
+>>> server_interface.upload(['/path/to/local/file', '/remote/path'])
 0
->>> file_interface.read('/remote/path')
-b"..."
+>>> server_interface.read('/remote/path', 'local-path.txt')
+0
 ```
 
 ## Installation
