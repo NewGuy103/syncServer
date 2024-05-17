@@ -15,11 +15,120 @@ import argon2  # argon2-cffi
 import cryptography
 import msgpack
 
-from pycrypter import CipherManager  # newguy103-pycrypter
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+
 from datetime import datetime
 from typing import BinaryIO, Callable, Generator, Literal, TextIO
 
 __version__: str = "1.2.0"
+
+
+class SimpleCipher:
+    def __init__(
+            self, cipher_key: bytes | str,
+            hash_method: hashes.HashAlgorithm = None,
+
+            hash_pepper: bytes = b'', password_pepper: bytes = b''
+    ) -> None:
+        if not isinstance(hash_pepper, bytes):
+            raise TypeError("hash pepper is not bytes")
+        
+        if not isinstance(password_pepper, bytes):
+            raise TypeError("password pepper is not bytes")
+        
+        match cipher_key:
+            case bytes():
+                pass
+            case str():
+                cipher_key: bytes = cipher_key.encode('utf-8')
+            case _:
+                raise TypeError("encryption key is not bytes or string")
+        
+        self.__key: bytes = cipher_key
+        
+        if not hash_method:
+            self.hash_method: hashes.SHA3_512 = hashes.SHA3_512()
+        else:
+            self.hash_method: hashes.HashAlgorithm = hash_method
+
+        self.hash_pepper: bytes = hash_pepper
+        self.pw_pepper: bytes = password_pepper
+
+    def encrypt(
+            self, data: bytes | str,
+            associated_data: bytes = b'',
+    ) -> bytes:        
+        match data:
+            case bytes():
+                pass
+            case str():
+                data: bytes = data.encode('utf-8')
+            case _:
+                raise TypeError("data is not bytes or string")
+        
+        salt: bytes = secrets.token_bytes(32)
+        kdf: PBKDF2HMAC = PBKDF2HMAC(
+            algorithm=self.hash_method,
+            length=32,
+            salt=salt + self.hash_pepper,
+            iterations=100_000
+        )
+        
+        aes_key: bytes = kdf.derive(self.pw_pepper + self.__key)
+        aes: AESGCM = AESGCM(aes_key)
+
+        nonce: bytes = secrets.token_bytes(12)
+        encrypted_data: bytes = aes.encrypt(nonce, data, associated_data)
+
+        return salt + nonce + encrypted_data
+
+    def decrypt(
+            self, data: bytes | str,
+            associated_data: bytes = b'',
+    ) -> bytes:
+        match data:
+            case bytes():
+                pass
+            case str():
+                data: bytes = data.encode('utf-8')
+            case _:
+                raise TypeError("data is not bytes or string")
+        
+        salt: bytes = data[0:32]
+        data: bytes = data[32:]
+        
+        nonce: bytes = data[0:12]
+        data: bytes = data[12:]
+
+        kdf: PBKDF2HMAC = PBKDF2HMAC(
+            algorithm=self.hash_method,
+            length=32,
+            salt=salt + self.hash_pepper,
+            iterations=100_000
+        )
+        
+        aes_key: bytes = kdf.derive(self.pw_pepper + self.__key)
+        aes: AESGCM = AESGCM(aes_key)
+
+        decrypted_data: bytes = aes.decrypt(nonce, data, associated_data)
+        return decrypted_data
+    
+    def hash_data(self, data: bytes | str):
+        match data:
+            case bytes():
+                pass
+            case str():
+                data: bytes = data.encode('utf-8')
+            case _:
+                raise TypeError("data is not bytes or string")
+        
+        digest: hashes.Hash = hashes.Hash(self.hash_method)
+        digest.update(data)
+
+        hashed_data: bytes = digest.finalize()
+        return hashed_data.hex()
 
 
 class FileDatabase:
@@ -43,9 +152,8 @@ class FileDatabase:
         self.cursor: sqlite3.Cursor = self.db.cursor()
 
         self.pw_hasher: argon2.PasswordHasher = argon2.PasswordHasher()
-        self.cipher_mgr: CipherManager = CipherManager()
+        self.hash_method: hashes.SHA512 = hashes.SHA512()
 
-        self.cipher_mgr.hash_method = cryptography.hazmat.primitives.hashes.SHA3_512()
         self.cursor.executescript("""
             PRAGMA foreign_keys = ON;
             CREATE TABLE IF NOT EXISTS users (
@@ -146,7 +254,7 @@ class FileDatabase:
            SELECT config_data, config_vars FROM config 
            WHERE config_id='main'
         """)
-        config = self.cursor.fetchone()
+        config: tuple[bytes, bytes] = self.cursor.fetchone()
         db_version: str = "1.1.0"  # make sure to only update this when updating the database schema
 
         if not config:
@@ -206,13 +314,12 @@ class FileDatabase:
                 "database password provided but database is not protected"
             )
 
+        init_cipher: SimpleCipher = SimpleCipher(db_password, hash_method=self.hash_method)
         if db_protected:
             try:
-                msgpack_secrets = self.cipher_mgr.fernet.decrypt_data(
-                    config_secrets, password=db_password
-                )
+                msgpack_secrets = init_cipher.decrypt(config_secrets)
                 config_secrets = msgpack.unpackb(msgpack_secrets)
-            except cryptography.fernet.InvalidToken:  # type: ignore
+            except cryptography.exceptions.InvalidTag:  # type: ignore
                 raise RuntimeError(
                     "could not decrypt config_data, either incorrect password or not encrypted, "
                     "if the original key was lost, decrypt the 'syncServer-recoveryKey' entry  "
@@ -221,6 +328,13 @@ class FileDatabase:
         else:
             config_secrets = msgpack.unpackb(config[0])
         
+        hash_pepper: bytes = config_secrets.get('hash-pepper', b'')
+        pw_pepper: bytes = config_secrets.get('password-pepper', b'')
+
+        self.cipher: SimpleCipher = SimpleCipher(
+            db_password, hash_method=self.hash_method,
+            hash_pepper=hash_pepper, password_pepper=pw_pepper
+        )
         self.conf_secrets: dict = config_secrets
         self.conf_vars: dict = config_vars
 
@@ -248,6 +362,14 @@ class FileDatabase:
         - ValueError: If set_protection is True but cipher_key is not provided.
         """
 
+        match cipher_key:
+            case bytes():
+                pass
+            case str():
+                cipher_key: bytes = cipher_key.encode('utf-8')
+            case _:
+                raise TypeError("encryption key is not bytes or string")
+        
         if set_protection and not cipher_key:
             raise ValueError(
                 "set_protection is True but cipher_key was not provided"
@@ -271,14 +393,13 @@ class FileDatabase:
         self.conf_vars['syncServer-protected'] = True
         self.conf_vars['syncServer-encryptionEnabled'] = True
 
-        encrypted_secrets = self.cipher_mgr.fernet.encrypt_data(
-            msgpack.packb(self.conf_secrets), password=cipher_key
-        )
-        recovery_key = secrets.token_hex(32)
+        recovery_key: str = secrets.token_hex(32)
+        mainkey_cipher: SimpleCipher = SimpleCipher(cipher_key, hash_method=self.hash_method)
 
-        encrypted_cipher_key = self.cipher_mgr.fernet.encrypt_data(
-            cipher_key, password=recovery_key
-        )
+        recoverykey_cipher: SimpleCipher = SimpleCipher(recovery_key, hash_method=self.hash_method)
+        encrypted_secrets: bytes = mainkey_cipher.encrypt(msgpack.packb(self.conf_secrets))
+
+        encrypted_cipher_key: bytes = recoverykey_cipher.encrypt(cipher_key)
         self._cipher_key: bytes | str = cipher_key
 
         self.conf_vars['syncServer-recoveryKey'] = encrypted_cipher_key
@@ -299,9 +420,7 @@ class FileDatabase:
         if not secrets:
             pass
         elif self.conf_vars['syncServer-protected']:
-            conf_secrets: bytes = self.cipher_mgr.fernet.encrypt_data(
-                msgpack.packb(secrets), password=self._cipher_key
-            )
+            conf_secrets: bytes = self.cipher.encrypt(msgpack.packb(secrets))
         else:
             conf_secrets: bytes = msgpack.packb(secrets)
         
@@ -532,12 +651,7 @@ class FileDatabase:
                 return "FILE_EXISTS"
         
         if self.conf_secrets['use_encryption']:
-            first_chunk = self.cipher_mgr.fernet.encrypt_data(
-                first_chunk, password=self._cipher_key,
-                hash_pepper=self.cipher_conf['hash_pepper'],
-
-                password_pepper=self.cipher_conf['password_pepper']
-            )
+            first_chunk: bytes = self.cipher.encrypt(first_chunk)
 
         data_id = str(uuid.uuid4())
         config_data = {
@@ -559,15 +673,10 @@ class FileDatabase:
                 VALUES (?, ?)
             """, [data_id, msgpack.packb(config_data)])
 
-            chunk = file_stream.read(chunk_size)
+            chunk: bytes = file_stream.read(chunk_size)
             while chunk:
                 if self.conf_secrets['use_encryption']:
-                    chunk = self.cipher_mgr.fernet.encrypt_data(
-                        chunk, password=self._cipher_key,
-                        hash_pepper=self.cipher_conf['hash_pepper'],
-
-                        password_pepper=self.cipher_conf['password_pepper']
-                    )
+                    chunk: bytes = self.cipher.encrypt(chunk)
                 
                 self.cursor.execute("""
                     UPDATE files
@@ -641,12 +750,7 @@ class FileDatabase:
         
         data_id = non_deleted_id
         if self.conf_secrets['use_encryption']:
-            first_chunk = self.cipher_mgr.fernet.encrypt_data(
-                first_chunk, password=self._cipher_key,
-                hash_pepper=self.cipher_conf['hash_pepper'],
-
-                password_pepper=self.cipher_conf['password_pepper']
-            )
+            first_chunk: bytes = self.cipher.encrypt(first_chunk)
         
         config_data = {
             'encrypted': self.conf_secrets['use_encryption'],
@@ -668,12 +772,7 @@ class FileDatabase:
             chunk = file_stream.read(chunk_size)
             while chunk:
                 if self.conf_secrets['use_encryption']:
-                    chunk = self.cipher_mgr.fernet.encrypt_data(
-                        chunk, password=self._cipher_key,
-                        hash_pepper=self.cipher_conf['hash_pepper'],
-
-                        password_pepper=self.cipher_conf['password_pepper']
-                    )
+                    chunk: bytes = self.cipher.encrypt(chunk)
                 
                 self.cursor.execute("""
                     UPDATE files
@@ -837,12 +936,8 @@ class FileDatabase:
                 offset += chunk_size
 
                 if config['encrypted']:
-                    chunk = self.cipher_mgr.fernet.decrypt_data(
-                        chunk, password=self._cipher_key,
-                        hash_pepper=self.cipher_conf['hash_pepper'],
-
-                        password_pepper=self.cipher_conf['password_pepper']
-                    )
+                    chunk: bytes = self.cipher.decrypt(chunk)
+                
                 yield chunk
         
         # Returning generator() instead of yield directly
@@ -857,7 +952,7 @@ class DirectoryInterface:
         self.cursor: sqlite3.Cursor = parent.cursor
 
         self.pw_hasher: argon2.PasswordHasher = parent.pw_hasher
-        self.cipher_mgr: CipherManager = parent.cipher_mgr
+        self.cipher: SimpleCipher = parent.cipher
 
         self.conf_secrets: dict = parent.conf_secrets
         self.conf_vars: dict = parent.conf_vars
@@ -1048,7 +1143,7 @@ class DeletedFiles:
         self.cursor: sqlite3.Cursor = parent.cursor
 
         self.pw_hasher: argon2.PasswordHasher = parent.pw_hasher
-        self.cipher_mgr: CipherManager = parent.cipher_mgr
+        self.cipher: SimpleCipher = parent.cipher
 
         self.conf_secrets: dict = parent.conf_secrets
         self.conf_vars: dict = parent.conf_vars
@@ -1331,7 +1426,7 @@ class APIKeyInterface:
         self.cursor: sqlite3.Cursor = parent.cursor
 
         self.pw_hasher: argon2.PasswordHasher = parent.pw_hasher
-        self.cipher_mgr: CipherManager = parent.cipher_mgr
+        self.cipher: SimpleCipher = parent.cipher
 
         self.conf_secrets: dict = parent.conf_secrets
         self.conf_vars: dict = parent.conf_vars
@@ -1345,14 +1440,10 @@ class APIKeyInterface:
         if not isinstance(api_key, str):
             raise TypeError("'api_key' must be string")
         
-        match api_key:
-            case bytes():
-                pass
-            case str():
-                api_key = api_key.encode('utf-8')
+        api_key: bytes = api_key.encode('utf-8')
         
         hash_pepper: bytes = self.cipher_conf.get('hash_pepper', b'')
-        hashed_apikey: str = self.cipher_mgr.hash_string(hash_pepper + api_key)
+        hashed_apikey: str = self.cipher.hash_data(api_key + hash_pepper)
 
         return hashed_apikey
     
@@ -1473,7 +1564,7 @@ class APIKeyInterface:
             return "APIKEY_EXISTS"
         
         salt: bytes = secrets.token_hex(32)
-        hashed_userid: str = self.cipher_mgr.hash_string(user_id + salt)
+        hashed_userid: str = self.cipher.hash_data(user_id + salt)
 
         api_key: str = f"syncServer-{hashed_userid}"
         hashed_apikey: str = self._hash_key(api_key)
@@ -1796,14 +1887,14 @@ class Main:
                 )
 
             key_password: str = getpass.getpass("Enter the recovery key: ")            
+            recovery_cipher: SimpleCipher = SimpleCipher(key_password)
+
             try:
-                original_key: bytes = self.db.cipher_mgr.fernet.decrypt_data(
-                    recovery_key, password=key_password
-                )
-            except cryptography.fernet.InvalidToken:  # type: ignore
+                original_key: bytes = recovery_cipher.decrypt(recovery_key)
+            except cryptography.exceptions.InvalidTag:  # type: ignore
                 self.parser.exit(1, "Decrypting recovery key failed!\n")
             
-            self.parser.exit(0, f"Found original key: {original_key}\n")
+            self.parser.exit(0, f"Found original password: {original_key}\n")
 
         if args.edit_vars:
             self.db: FileDatabase = FileDatabase(
@@ -1861,13 +1952,6 @@ class Main:
             formatted_data: str = self._fmt_data(conf_data, indent=4)
             edited_conf_data: str = self.display_conf(formatted_data)
             
-            if os.path.isfile("./syncServer-recoveryKey.key"):
-                emsg: str = (
-                    "Warning: Recovery key file exists in current directory, "
-                    "delete or move this file before changing encryption key\n"
-                )
-                self.parser.exit(0, emsg)
-            
             try:
                 edited_conf: dict = ast.literal_eval(edited_conf_data)
             except SyntaxError:
@@ -1887,10 +1971,17 @@ class Main:
                 print("Warning: This will not re-encrypt existing data.")
                 warning_input: str = input(
                     "Files and data were previously encrypted in this database "
-                    "with a different key. Proceed anyway? [Y/N]: "
+                    "with a different key. Proceed anyway? [y/N]: "
                 )
                 if warning_input.lower() != "y":
                     self.parser.exit(0, "Aborted.\n")
+            
+            if os.path.isfile("./syncServer-recoveryKey.key"):
+                emsg: str = (
+                    "Warning: Recovery key file exists in current directory, "
+                    "delete or move this file before changing encryption key\n"
+                )
+                self.parser.exit(1, emsg)
             
             set_protection: bool = bool(cipher_key)
             self.db.set_protection(set_protection, cipher_key)

@@ -36,6 +36,93 @@ options:
 *Since version 1.1.0, `--set-protection` will not re-encrypt all the previously encrypted data*
 *if the database had an encryption key before.*
 
+## SimpleCipher
+
+---
+
+*New in version 1.2.1.*
+
+This is a simple class that allows to encrypt/decrypt using AES-GCM-256 and PBKDF2HMAC.
+This was created to remove the dependency on `newguy103-pycrypter`.
+
+```python
+from syncserver.server import SimpleCipher
+cipher = SimpleCipher(b"cipher_password")
+```
+
+**Attributes:**
+
+- **__key** - The cipher key provided, used for encryption/decryption.
+- **hash_method** - The hash algorithm used for `hash_data` and PBKDF2HMAC. Uses `cryptography.hazmat.primitives.hashes`.
+- **hash_pepper** - The pepper added to every PBKDF2HMAC instance.
+- **pw_pepper** - The pepper added to the password when calling `kdf.derive`.
+
+**Parameters:**
+
+- **cipher_key** ([_bytes_](https://docs.python.org/3/library/functions.html#bytes) | [_str_](https://docs.python.org/3/library/functions.html#str)) - The key used for encryption/decryption.
+- **hash_method** (*hashes.HashAlgorithm*) - The hash algorithm used by `hash_data` and PBKDF2HMAC. Defaults to SHA512.
+- **hash_pepper** ([_bytes_](https://docs.python.org/3/library/functions.html#bytes)) - The pepper added to every PBKDF2HMAC instance.
+- **password_pepper** ([_bytes_](https://docs.python.org/3/library/functions.html#bytes)) - The pepper added to the password when calling `kdf.derive`.
+
+**Raises:**
+
+- [**TypeError**](https://docs.python.org/3/library/exceptions.html#ValueError) - If `cipher_key` is not bytes or str,
+    or if the peppers are not bytes.
+
+### `encrypt`
+
+---
+
+**Parameters:**
+
+- **data** ([_bytes_](https://docs.python.org/3/library/functions.html#bytes)) - The plaintext data to encrypt.
+- **associated_data** ([_bytes_](https://docs.python.org/3/library/functions.html#bytes)) - Extra data passed to AES-GCM.
+
+**Returns:**
+
+- `bytes` - The encrypted data. The nonce and salt is added to the returned data.
+
+**Raises:**
+
+- [**TypeError**](https://docs.python.org/3/library/exceptions.html#ValueError) - If `data` is not bytes or string.
+
+This function is a simple abstraction to encrypt data. When encryption is complete, the nonce and salt are added 
+to the returned value as `salt + nonce + encrypted_data`.
+
+### `decrypt`
+
+---
+
+**Parameters:**
+
+- **data** ([_bytes_](https://docs.python.org/3/library/functions.html#bytes)) - The ciphertext data to decrypt.
+- **associated_data** ([_bytes_](https://docs.python.org/3/library/functions.html#bytes)) - Extra data passed to AES-GCM.
+
+**Returns:**
+
+- `bytes` - The decrypted data.
+
+**Raises:**
+
+- [**TypeError**](https://docs.python.org/3/library/exceptions.html#ValueError) - If `data` is not bytes or string.
+- **cryptography.exceptions.InvalidTag** - If decryption fails due to invalid password.
+
+This function is a simple abstraction to decrypt data. It slices the bytes to get the salt and nonce.
+
+### `hash_data`
+
+---
+
+**Parameters:**
+
+- **data** ([_bytes_](https://docs.python.org/3/library/functions.html#bytes)) - The data to hash.
+
+**Raises:**
+
+- [**TypeError**](https://docs.python.org/3/library/exceptions.html#ValueError) - If `data` is not bytes or string.
+
+This function is a simple abstraction to `hashes.Hash()`. It allows simple hashing of a string or small set of data.
+
 ## FileDatabase
 
 ---
