@@ -1,6 +1,8 @@
 import argparse
 import ast
 import getpass
+
+import copy
 import os
 import sqlite3
 
@@ -13,6 +15,7 @@ import logging
 
 import argon2  # argon2-cffi
 import cryptography
+import cryptography.exceptions
 import msgpack
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -20,9 +23,24 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 
 from datetime import datetime
-from typing import BinaryIO, Callable, Generator, Literal, TextIO
+from typing import BinaryIO, Generator, Literal, TextIO
+from contextlib import contextmanager
 
 __version__: str = "1.2.0"
+LOGFILE: str = 'syncServer-serverDB.log'
+
+
+@contextmanager
+def transaction(conn: sqlite3.Connection):
+    try:
+        cursor: sqlite3.Cursor = conn.cursor()
+        with conn:
+            yield cursor
+    except sqlite3.Error:
+        logging.exception("Error thrown during transaction:")
+        raise
+    finally:
+        cursor.close()
 
 
 class SimpleCipher:
@@ -135,8 +153,19 @@ class FileDatabase:
     def __init__(
             self, db_path: str = '', 
             db_password: bytes | str = b'',
-            recovery_mode: bool = False
+            recovery_mode: bool = False,
+            dict_cache: bool = False
     ) -> None:
+        if not isinstance(db_path, (bytes, str)):
+            raise TypeError("database path must be bytes or str")        
+        if not isinstance(db_password, (bytes, str)):
+            raise TypeError("database password must be bytes or str")
+        
+        if not isinstance(recovery_mode, bool):
+            raise TypeError("recovery mode option must be bool")
+        if not isinstance(dict_cache, bool):
+            raise TypeError("dict cache option must be bool")
+        
         if not db_path:
             data_dir: str = os.environ.get(
                 "XDG_DATA_HOME", 
@@ -149,116 +178,111 @@ class FileDatabase:
             db_path: str = os.path.join(db_dir, 'syncServer.db')
         
         self.db: sqlite3.Connection = sqlite3.connect(db_path, check_same_thread=False)
-        self.cursor: sqlite3.Cursor = self.db.cursor()
-
         self.pw_hasher: argon2.PasswordHasher = argon2.PasswordHasher()
+
         self.hash_method: hashes.SHA512 = hashes.SHA512()
+        self._using_cache: bool = dict_cache
 
-        self.cursor.executescript("""
-            PRAGMA foreign_keys = ON;
-            CREATE TABLE IF NOT EXISTS users (
-                user_id TEXT PRIMARY KEY,   
-                username TEXT UNIQUE NOT NULL,
-                token TEXT NOT NULL
-            );
+        with transaction(self.db) as cur:
+            cur.executescript("""
+                PRAGMA foreign_keys = ON;
+                PRAGMA journal_mode=WAL;
+                PRAGMA synchronous=FULL;
+                
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id TEXT PRIMARY KEY,   
+                    username TEXT UNIQUE NOT NULL,
+                    token TEXT NOT NULL
+                ) STRICT;
 
-            CREATE TABLE IF NOT EXISTS user_apikeys (
-                key_id TEXT PRIMARY KEY,
-                user_id TEXT,
-                
-                key_name TEXT,
-                api_key TEXT,
-                
-                key_perms BLOB,
-                expiry_date DATETIME,
-                
-                FOREIGN KEY (user_id) REFERENCES users(user_id)
-                    ON DELETE CASCADE
-            );
-            CREATE TABLE IF NOT EXISTS files (
-                data_id TEXT PRIMARY KEY,
-                dir_id TEXT,
-                
-                user_id TEXT,
-                filename TEXT,
+                CREATE TABLE IF NOT EXISTS user_apikeys (
+                    key_id TEXT PRIMARY KEY,
+                    user_id TEXT,
+                    
+                    key_name TEXT,
+                    api_key TEXT,
+                    
+                    key_perms BLOB,
+                    expiry_date TEXT, -- datetime
+                    
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                        ON DELETE CASCADE
+                ) STRICT;
+                CREATE TABLE IF NOT EXISTS files (
+                    data_id TEXT PRIMARY KEY,
+                    dir_id TEXT,
+                    
+                    user_id TEXT,
+                    filename TEXT,
 
-                file_data BLOB,
-                FOREIGN KEY (user_id) REFERENCES users(user_id)
-                    ON DELETE CASCADE,
-                FOREIGN KEY (dir_id) REFERENCES directories(dir_id)
-                    ON DELETE CASCADE
-            );
-            
-            CREATE TABLE IF NOT EXISTS directories (
-                dir_id TEXT PRIMARY KEY,
-                user_id TEXT,
-
-                dir_name TEXT,
-                FOREIGN KEY (user_id) REFERENCES users(user_id)
-                    ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS config (
-                config_id TEXT PRIMARY KEY,
-                config_data BLOB,
-                config_vars BLOB
-            );
-            
-            CREATE TABLE IF NOT EXISTS deleted_files (
-                delete_id TEXT PRIMARY KEY,
-                data_id TEXT,
+                    file_data BLOB,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                        ON DELETE CASCADE,
+                    FOREIGN KEY (dir_id) REFERENCES directories(dir_id)
+                        ON DELETE CASCADE
+                ) STRICT;
                 
-                old_filepath TEXT,
-                delete_date TIMESTAMP DEFAULT (
-                    datetime('now', 'localtime')  
-                    || '.' 
-                    || strftime('%f', 'now', 'localtime')
-                ),
-                
-                FOREIGN KEY (data_id) REFERENCES files(data_id)
-                    ON DELETE CASCADE
-            );
-            
-            CREATE TABLE IF NOT EXISTS files_config (
-                id INTEGER PRIMARY KEY,
-                data_id TEXT,
+                CREATE TABLE IF NOT EXISTS directories (
+                    dir_id TEXT PRIMARY KEY,
+                    user_id TEXT,
 
-                config BLOB,
-                FOREIGN KEY(data_id) REFERENCES files(data_id)
-                    ON DELETE CASCADE
-            );
-        """)
+                    dir_name TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                        ON DELETE CASCADE
+                ) STRICT;
+
+                CREATE TABLE IF NOT EXISTS config (
+                    config_id TEXT PRIMARY KEY,
+                    config_data BLOB,
+                    config_vars BLOB
+                ) STRICT;
+                
+                CREATE TABLE IF NOT EXISTS deleted_files (
+                    delete_id TEXT PRIMARY KEY,
+                    data_id TEXT,
+                    
+                    old_filepath TEXT,
+                    delete_date TEXT DEFAULT (
+                        datetime('now', 'localtime')  
+                        || '.' 
+                        || strftime('%f', 'now', 'localtime')
+                    ), -- timestamp
+                    
+                    FOREIGN KEY (data_id) REFERENCES files(data_id)
+                        ON DELETE CASCADE
+                ) STRICT;
+                
+                CREATE TABLE IF NOT EXISTS files_config (
+                    id INTEGER PRIMARY KEY,
+                    data_id TEXT,
+
+                    config BLOB,
+                    FOREIGN KEY(data_id) REFERENCES files(data_id)
+                        ON DELETE CASCADE
+                ) STRICT;
+                                    
+                CREATE UNIQUE INDEX IF NOT EXISTS user_id ON users(user_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS dir_id ON directories(dir_id);
+                
+                CREATE UNIQUE INDEX IF NOT EXISTS data_id ON files(data_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS key_id ON user_apikeys(key_id);
+                              
+                CREATE INDEX IF NOT EXISTS delete_data ON deleted_files(delete_date);
+            """)
 
         self._load_conf(db_password=db_password, recovery_mode=recovery_mode)
 
     def _load_conf(self, db_password: bytes | str = '', recovery_mode: bool = False):
-        """
-        Load the configuration data from the 'config' table in the database.
-
-        Parameters:
-        - db_password (bytes | str): The database password used for decryption.
-
-        Raises:
-        - RuntimeError: If there is an issue decrypting the configuration data or if the
-          'syncServer-protected' configuration variable is not found.
-
-        Note:
-        - The method retrieves and decrypts configuration data from the 'config' table.
-        - If the configuration data is not present, default values are used and stored in the 'config' table.
-        - The 'syncServer-protected' configuration variable determines whether the database is key-protected.
-        - If protected, the provided database password is used for decryption.
-        - The decrypted config data is stored in 'conf_secrets', 'conf_vars', and 'cipher_conf' attributes.
-        """
-
-        self.cursor.execute("""
-           SELECT config_data, config_vars FROM config 
-           WHERE config_id='main'
-        """)
-        config: tuple[bytes, bytes] = self.cursor.fetchone()
-        db_version: str = "1.1.0"  # make sure to only update this when updating the database schema
-
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT config_data, config_vars FROM config 
+                WHERE config_id='main'
+            """)
+            config: tuple[bytes, bytes] = cursor.fetchone()
+        
+        db_version: str = "1.2.0"  # make sure to only update this when updating the database schema
         if not config:
-            config_secrets = {
+            config_secrets: dict = {
                 'use_encryption': False,
                 'encryption_config': {
                     'hash_pepper': b'',
@@ -266,7 +290,7 @@ class FileDatabase:
                 }
             }
 
-            config_vars = {
+            config_vars: dict = {
                 'syncServer-db-version': db_version,
                 'syncServer-protected': False,
 
@@ -277,20 +301,27 @@ class FileDatabase:
             bytes_encoded_secrets = msgpack.packb(config_secrets)
             bytes_encoded_vars = msgpack.packb(config_vars)
 
-            with self.db:
-                self.cursor.execute("""
+            with transaction(self.db) as cur:
+                cur.execute("""
                    INSERT OR IGNORE INTO config
                    VALUES ('main', ?, ?)
-               """, [bytes_encoded_secrets, bytes_encoded_vars])
+                """, [bytes_encoded_secrets, bytes_encoded_vars])
 
             config = (msgpack.packb(config_secrets), msgpack.packb(config_vars))
 
         config_secrets: bytes = config[0]
         config_vars: dict = msgpack.unpackb(config[1])
 
+        self.recovery_mode: bool = recovery_mode
         if recovery_mode:
             # Partially initialize config vars to get the recovery key
             self.conf_vars: dict = config_vars 
+            self.conf_secrets = {}
+
+            self.cipher: SimpleCipher = SimpleCipher('')
+            self.cipher_conf = {}
+
+            self.db_admin: DatabaseAdmin = DatabaseAdmin(self)
             return
         
         stored_db_version: str = config_vars.get('syncServer-db-version', '')
@@ -305,14 +336,10 @@ class FileDatabase:
         
         db_protected = config_vars.get('syncServer-protected', -1)
         if db_protected == -1:
-            raise RuntimeError(
-                "config variable 'syncServer-protected' not in config_vars dictionary"
-            )
+            raise RuntimeError("config variable 'syncServer-protected' not in config_vars dictionary")
         
         if not db_protected and db_password:
-            raise RuntimeError(
-                "database password provided but database is not protected"
-            )
+            raise RuntimeError("database password provided but database is not protected")
 
         init_cipher: SimpleCipher = SimpleCipher(db_password, hash_method=self.hash_method)
         if db_protected:
@@ -338,141 +365,76 @@ class FileDatabase:
         self.conf_secrets: dict = config_secrets
         self.conf_vars: dict = config_vars
 
-        self._cipher_key: bytes | str = db_password
         self.cipher_conf: dict = config_secrets['encryption_config']
-
         self.dirs: DirectoryInterface = DirectoryInterface(self)
-        self.deleted_files: DeletedFiles = DeletedFiles(self)
 
+        self.deleted_files: DeletedFiles = DeletedFiles(self)
         self.api_keys: APIKeyInterface = APIKeyInterface(self)
 
-    def set_protection(
-            self, set_protection: bool,
-            cipher_key: bytes | str = b''
-    ) -> None:
-        """
-        Set or unset protection for the database, including encryption.
+        self.db_admin: DatabaseAdmin = DatabaseAdmin(self)
+        self.__data_cache: dict = {}
 
-        Parameters:
-        - set_protection (bool): True to enable protection, False to disable.
-        - cipher_key (bytes or str, optional): Encryption key for protecting the database.
-          Required when set_protection is True.
+        if self._using_cache:
+            with transaction(self.db) as cursor:
+                cursor.execute("SELECT user_id, username, token FROM users") 
+                user_data: list[tuple] = cursor.fetchall()
+                
+            for user_id, username, token in user_data:
+                user_dict: dict = {
+                    'id': user_id,
+                    'token': token
+                }
+                self.__data_cache[username] = user_dict
         
-        Raises:
-        - ValueError: If set_protection is True but cipher_key is not provided.
-        """
-
-        match cipher_key:
-            case bytes():
-                pass
-            case str():
-                cipher_key: bytes = cipher_key.encode('utf-8')
-            case _:
-                raise TypeError("encryption key is not bytes or string")
-        
-        if set_protection and not cipher_key:
-            raise ValueError(
-                "set_protection is True but cipher_key was not provided"
-            )
-
-        if not set_protection:  # False
-            self.conf_secrets['use_encryption'] = False
-            self.conf_vars['syncServer-protected'] = False
-
-            bytes_encoded_secrets = msgpack.packb(self.conf_secrets)
-            bytes_encoded_vars = msgpack.packb(self.conf_vars)
-            with self.db:
-                self.cursor.execute("""
-                    UPDATE config
-                    SET config_data=?, config_vars=?
-                    WHERE config_id='main'
-                """, [bytes_encoded_secrets, bytes_encoded_vars])
-            return
-
-        self.conf_secrets['use_encryption'] = True
-        self.conf_vars['syncServer-protected'] = True
-        self.conf_vars['syncServer-encryptionEnabled'] = True
-
-        recovery_key: str = secrets.token_hex(32)
-        mainkey_cipher: SimpleCipher = SimpleCipher(cipher_key, hash_method=self.hash_method)
-
-        recoverykey_cipher: SimpleCipher = SimpleCipher(recovery_key, hash_method=self.hash_method)
-        encrypted_secrets: bytes = mainkey_cipher.encrypt(msgpack.packb(self.conf_secrets))
-
-        encrypted_cipher_key: bytes = recoverykey_cipher.encrypt(cipher_key)
-        self._cipher_key: bytes | str = cipher_key
-
-        self.conf_vars['syncServer-recoveryKey'] = encrypted_cipher_key
-        with self.db, open('syncServer-recoveryKey.key', 'w', encoding='utf-8') as file:
-            self.cursor.execute("""
-                UPDATE config
-                SET config_data=?, config_vars=?
-                WHERE config_id='main'
-            """, [
-                encrypted_secrets,
-                msgpack.packb(self.conf_vars)
-            ])
-            file.write(recovery_key)
-
-        return
-
-    def save_conf(self, secrets: dict = None, _vars: dict = None) -> None:
-        if not secrets:
-            pass
-        elif self.conf_vars['syncServer-protected']:
-            conf_secrets: bytes = self.cipher.encrypt(msgpack.packb(secrets))
-        else:
-            conf_secrets: bytes = msgpack.packb(secrets)
-        
-        with self.db:
-            if secrets:
-                self.cursor.execute("""
-                    UPDATE config
-                    SET config_data=?
-                    WHERE config_id='main'
-                """, [conf_secrets])
+    def _get_userid(self, username: str) -> str:
+        if self._using_cache:
+            user_dict: dict = self.__data_cache.get(username)
+            if not user_dict:
+                return ''
             
-            if _vars:
-                self.cursor.execute("""
-                    UPDATE config
-                    SET config_vars=?
-                    WHERE config_id='main'
-                """, [msgpack.packb(_vars)])
-        
-        return 0
+            return user_dict['id']
+        else:
+            with transaction(self.db) as cursor:
+                cursor.execute("""
+                    SELECT user_id FROM users WHERE username=?
+                """, [username])
+                db_result: tuple[str] = cursor.fetchone()
 
-    def verify_user(self, username: str, token: str) -> str | bool:
-        """
-        Verify the authenticity of a user's authentication token.
+            if not db_result:
+                return ''
+            
+            return db_result[0]
+    
+    def _get_dirid(self, dir_path: str, user_id: str) -> str:
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT dir_id FROM directories
+                WHERE dir_name=? AND user_id=?
+            """, [dir_path, user_id])
 
-        Parameters:
-        - username (str): The username of the user to verify.
-        - token (str): The authentication token to be verified.
-
-        Returns:
-        - True: If the user is verified successfully.
-        - "NO_USER": If the specified username is not found in the database.
-        - False: If the verification process fails, indicating an incorrect token.
-        - Exception: If an unexpected exception occurs during the verification process.
-
-        Notes:
-        - Retrieves the stored token for the given username from the database.
-        - Compares the provided token with the stored hashed token using Argon2 password hashing.
-        - Returns True if the verification is successful, "NO_USER" if the user is not found,
-          and False if the verification process fails.
-        - Logs an error if an unexpected exception occurs during the verification process,
-          and returns the exception instance in case of an unexpected error.
-        """
-
-        self.cursor.execute("""
-            SELECT token FROM users WHERE username=?
-        """, [username])
-        db_result = self.cursor.fetchone()
-
+            db_result: tuple[str] = cursor.fetchone()
+            
         if not db_result:
-            return "NO_USER"
+            return ''
+            
+        return db_result[0]
+            
+    def verify_user(self, username: str, token: str) -> str | bool:
+        if self._using_cache:
+            user_dict: dict = self.__data_cache.get(username)
+            if not user_dict:
+                return "NO_USER"
+            hashed_pw: str = user_dict['token']  # fail intentionally if missing
+        else:
+            with transaction(self.db) as cursor:
+                cursor.execute("""
+                    SELECT token FROM users WHERE username=?
+                """, [username])
+                db_result: tuple[str] = cursor.fetchone()
 
-        hashed_pw = db_result[0]
+            if not db_result:
+                return "NO_USER"
+            hashed_pw: str = db_result[0]
 
         try:
             self.pw_hasher.verify(hashed_pw, token)
@@ -504,30 +466,24 @@ class FileDatabase:
         - Returns 0 upon successful addition of the new user to the database.
         """
 
-        blacklisted_names = {
-            'INVALID_APIKEY', 'APIKEY_NOT_AUTHORIZED', 'NO_USER',
-        }
+        blacklisted_names: set = {'INVALID_APIKEY', 'APIKEY_NOT_AUTHORIZED', 'NO_USER', ''}
         if username in blacklisted_names:
             raise ValueError('cannot use blacklisted username')
         
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_id = self.cursor.fetchone()
-
-        if user_id:
+        user_data: str = self._get_userid(username)
+        if user_data:
             return "USER_EXISTS"
 
-        hashed_pw = self.pw_hasher.hash(token)
-        user_id = str(uuid.uuid4())
+        hashed_pw: str = self.pw_hasher.hash(token)
+        user_id: str = str(uuid.uuid4())
 
-        dir_id = str(uuid.uuid4())
-        with self.db:
-            self.cursor.execute("""
+        dir_id: str = str(uuid.uuid4())
+        with transaction(self.db) as cursor:
+            cursor.execute("""
                 INSERT INTO users (user_id, username, token)
                 VALUES (?, ?, ?)                
             """, [user_id, username, hashed_pw])
-            self.cursor.execute("""
+            cursor.execute("""
                 INSERT INTO directories (dir_id, user_id, dir_name)
                 VALUES (?, ?, '/')
             """, [dir_id, user_id])
@@ -535,54 +491,31 @@ class FileDatabase:
         return 0
 
     def remove_user(self, username: str) -> Literal["NO_USER"] | int:
-        """
-        Remove a user from the database based on the specified username.
-
-        Parameters:
-        - username (str): The username of the user to be removed.
-
-        Returns:
-        - 0: If the user is successfully removed from the database.
-        - "NO_USER": If the specified username is not found in the database.
-
-        Notes:
-        - Retrieves the stored user ID and hashed token for the given username from the database.
-        - Compares the provided token with the stored hashed token using Argon2 password hashing.
-        - If the user is not found, returns "NO_USER."
-        - If the token verification fails, returns "INVALID_TOKEN."
-        - If the verification is successful, irreversibly removes the user from the 'users' table.
-        - Returns 0 upon successful removal of the user from the database.
-        """
-
-        self.cursor.execute("""
-            SELECT token FROM users WHERE username=?
-        """, [username])
-        db_result = self.cursor.fetchone()
-
-        if not db_result:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
-
+        
+        if self._using_cache:
+            self.__data_cache.pop(username, '')
+        
         # irreversible delete
-        with self.db:
-            self.cursor.execute("""
+        with transaction(self.db) as cursor:
+            cursor.execute("""
                 DELETE FROM users
-                WHERE username=?
-            """, [username])
+                WHERE user_id=?
+            """, [user_id])
+        
         return 0
     
-    def dir_checker(self, file_path: str, user_id: str) -> Literal["NO_USER"] | tuple[str]:
+    def dir_checker(self, username: str, file_path: str) -> Literal["NO_USER"] | str:
         if not isinstance(file_path, str):
             raise TypeError("'file_path' must be a string")
         
         if not file_path:
             raise ValueError("'file_path' was not passed in args")
 
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE user_id=?
-        """, [user_id])
-        user_data: tuple[str] = self.cursor.fetchone()
-
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
         
         dirs: list[str] = file_path.split("/")
@@ -591,13 +524,11 @@ class FileDatabase:
         if path_without_file == "":
             path_without_file: str = "/"
         
-        self.cursor.execute("""
-            SELECT dir_id FROM directories
-            WHERE dir_name=? AND user_id=?
-        """, [path_without_file, user_id])
-        db_result: tuple[str] = self.cursor.fetchone()
-        
-        return db_result
+        dir_id: str = self._get_dirid(path_without_file, user_id)
+        if not dir_id:
+            return ''
+
+        return dir_id
     
     def add_file(
             self, username: str,
@@ -612,63 +543,54 @@ class FileDatabase:
         if not isinstance(chunk_size, int):
             raise TypeError("'chunk_size' must be an int")
 
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data = self.cursor.fetchone()
-
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
-
-        user_id = user_data[0]
-
-        first_chunk = file_stream.read(chunk_size)
+        
+        first_chunk: bytes = file_stream.read(chunk_size)
         if not first_chunk:
             raise IOError("file stream is empty")
         
-        dir_exists = self.dir_checker(file_path, user_id)
-        if not dir_exists:
+        dir_id: str = self.dir_checker(username, file_path)
+        if not dir_id:
             return "NO_DIR_EXISTS"
         
-        dir_id = dir_exists[0]
-        self.cursor.execute("""
-            SELECT data_id FROM files
-            WHERE filename=? AND user_id=? AND dir_id=?
-        """, [file_path, user_id, dir_id])
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT data_id FROM files
+                WHERE filename=? AND user_id=? AND dir_id=?
+            """, [file_path, user_id, dir_id])
+            file_data: list[tuple[str]] = cursor.fetchall()
 
-        file_data = self.cursor.fetchall()
+        with transaction(self.db) as cursor:
+            for file_tuple in file_data:
+                file_id: str = file_tuple[0]
+                cursor.execute("""
+                    SELECT data_id FROM deleted_files
+                    WHERE data_id=?
+                    ORDER BY delete_date DESC
+                """, [file_id])
 
-        for file_tuple in file_data:
-            file_id = file_tuple[0]
-            self.cursor.execute("""
-                SELECT data_id FROM deleted_files
-                WHERE data_id=?
-                ORDER BY delete_date DESC
-            """, [file_id])
-
-            tmp_delete_data = self.cursor.fetchone()
-            if not tmp_delete_data:
-                return "FILE_EXISTS"
+                tmp_delete_data: tuple[str] = cursor.fetchone()
+                if not tmp_delete_data:
+                    return "FILE_EXISTS"
         
         if self.conf_secrets['use_encryption']:
             first_chunk: bytes = self.cipher.encrypt(first_chunk)
 
-        data_id = str(uuid.uuid4())
-        config_data = {
-            'encrypted': self.conf_secrets['use_encryption'],
-            'chunk_size_used': chunk_size
-        }
+        data_id: str = str(uuid.uuid4())
+        config_data: dict = {'chunk-size': chunk_size}
 
-        with self.db:
-            file_data = [data_id, dir_id, user_id, file_path, first_chunk]
-            self.cursor.execute("""
+        with transaction(self.db) as cursor:
+            file_data: list = [data_id, dir_id, user_id, file_path, first_chunk]
+            cursor.execute("""
                 INSERT INTO files (
                     data_id, dir_id, user_id,
                     filename, file_data
                 )
                 VALUES (?, ?, ?, ?, ?)
             """, file_data)
-            self.cursor.execute("""
+            cursor.execute("""
                 INSERT INTO files_config (data_id, config)
                 VALUES (?, ?)
             """, [data_id, msgpack.packb(config_data)])
@@ -678,12 +600,12 @@ class FileDatabase:
                 if self.conf_secrets['use_encryption']:
                     chunk: bytes = self.cipher.encrypt(chunk)
                 
-                self.cursor.execute("""
+                cursor.execute("""
                     UPDATE files
-                    SET file_data = file_data || ?
-                    WHERE user_id=? AND data_id=? AND dir_id=?
-                """, [chunk, user_id, data_id, dir_id])
-                chunk = file_stream.read(chunk_size)
+                    SET file_data = cast(file_data || ? AS BLOB)
+                    WHERE data_id=?
+                """, [chunk, user_id])
+                chunk: bytes = file_stream.read(chunk_size)
 
         return 0
 
@@ -699,87 +621,78 @@ class FileDatabase:
         
         if not isinstance(chunk_size, int):
             raise TypeError("'chunk_size' must be an int")
-
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data = self.cursor.fetchone()
-
-        if not user_data:
+        
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
-
-        user_id = user_data[0]
-
-        first_chunk = file_stream.read(chunk_size)
+        
+        first_chunk: bytes = file_stream.read(chunk_size)
         if not first_chunk:
             raise IOError("file stream is empty")
         
-        dir_exists = self.dir_checker(file_path, user_id)
-        if not dir_exists:
+        dir_id: str = self.dir_checker(username, file_path)
+        if not dir_id:
             return "NO_DIR_EXISTS"
         
-        dir_id = dir_exists[0]
-        self.cursor.execute("""
-            SELECT data_id FROM files
-            WHERE filename=? AND user_id=? AND dir_id=?
-        """, [file_path, user_id, dir_id])
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT data_id FROM files
+                WHERE filename=? AND user_id=? AND dir_id=?
+            """, [file_path, user_id, dir_id])
+            file_data: list[tuple[str]] = cursor.fetchall()
 
-        file_data = self.cursor.fetchall()
         if not file_data:
             return "NO_FILE_EXISTS"
 
-        # [id1, id2, id3]
-        non_deleted_id = ""
-        for file_tuple in file_data:
-            file_id = file_tuple[0]
-            self.cursor.execute("""
-                SELECT data_id FROM deleted_files
-                WHERE data_id=?
-                ORDER BY delete_date DESC
-            """, [file_id])
+        non_deleted_id: str = ""
+        with transaction(self.db) as cursor:
+            for file_tuple in file_data:
+                file_id: str = file_tuple[0]
+                cursor.execute("""
+                    SELECT data_id FROM deleted_files
+                    WHERE data_id=?
+                    ORDER BY delete_date DESC
+                """, [file_id])
 
-            tmp_delete_data = self.cursor.fetchone()
-            if tmp_delete_data:
-                continue
+                tmp_delete_data: tuple[str] = cursor.fetchone()
+                
+                if tmp_delete_data:
+                    continue
 
-            non_deleted_id = file_id
-            break
+                non_deleted_id: str = file_id
+                break
 
         if not non_deleted_id:
             return "NO_FILE_EXISTS"
         
-        data_id = non_deleted_id
         if self.conf_secrets['use_encryption']:
             first_chunk: bytes = self.cipher.encrypt(first_chunk)
         
-        config_data = {
-            'encrypted': self.conf_secrets['use_encryption'],
-            'chunk_size_used': chunk_size
-        }
+        config_data = {'chunk-size': chunk_size}
         
-        with self.db:
-            self.cursor.execute("""
+        with transaction(self.db) as cursor:
+            cursor.execute("""
                 UPDATE files
                 SET file_data=?
-                WHERE user_id=? AND data_id=? AND dir_id=?
-            """, [first_chunk, user_id, non_deleted_id, dir_id])
-            self.cursor.execute("""
+                WHERE data_id=?
+            """, [first_chunk, non_deleted_id])
+            cursor.execute("""
                 UPDATE files_config
                 SET config=?
                 WHERE data_id=?
-            """, [msgpack.packb(config_data), data_id])
+            """, [msgpack.packb(config_data), non_deleted_id])
 
-            chunk = file_stream.read(chunk_size)
+            chunk: bytes = file_stream.read(chunk_size)
             while chunk:
                 if self.conf_secrets['use_encryption']:
                     chunk: bytes = self.cipher.encrypt(chunk)
                 
-                self.cursor.execute("""
+                cursor.execute("""
                     UPDATE files
-                    SET file_data = file_data || ?
-                    WHERE user_id=? AND data_id=?
+                    SET file_data = cast(file_data || ? AS BLOB)
+                    WHERE data_id=?
                 """, [chunk, user_id, non_deleted_id])
-                chunk = file_stream.read(chunk_size)
+                chunk: bytes = file_stream.read(chunk_size)
 
         return 0
 
@@ -792,64 +705,59 @@ class FileDatabase:
         if not isinstance(file_path, str):
             raise TypeError("'file_path' must be string")
         
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data = self.cursor.fetchone()
-
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
-
-        user_id = user_data[0]
         
-        dir_exists = self.dir_checker(file_path, user_id)
-        if not dir_exists:
+        dir_id: str = self.dir_checker(username, file_path)
+        if not dir_id:
             return "NO_DIR_EXISTS"
-        
-        dir_id = dir_exists[0]
-        self.cursor.execute("""
-            SELECT data_id FROM files
-            WHERE filename=? AND user_id=? AND dir_id=?
-        """, [file_path, user_id, dir_id])
+                        
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT data_id FROM files
+                WHERE filename=? AND user_id=? AND dir_id=?
+            """, [file_path, user_id, dir_id])
+            file_data: list[tuple[str]] = cursor.fetchall()
 
-        file_data = self.cursor.fetchall()
         if not file_data:
             return "NO_FILE_EXISTS"
 
         non_deleted_id = ""
-        for file_tuple in file_data:
-            file_id = file_tuple[0]
-            self.cursor.execute("""
-                SELECT data_id FROM deleted_files
-                WHERE data_id=?
-                ORDER BY delete_date DESC
-            """, [file_id])
-        
-            tmp_delete_data = self.cursor.fetchone()
-            if tmp_delete_data:
-                continue
+        with transaction(self.db) as cursor:
+            for file_tuple in file_data:
+                file_id: str = file_tuple[0]
+                cursor.execute("""
+                    SELECT data_id FROM deleted_files
+                    WHERE data_id=?
+                    ORDER BY delete_date DESC
+                """, [file_id])
 
-            non_deleted_id = file_id
-            break
+                tmp_delete_data: tuple[str] = cursor.fetchone()
+                
+                if tmp_delete_data:
+                    continue
+
+                non_deleted_id: str = file_id
+                break
         
         if not non_deleted_id:
             return "NO_FILE_EXISTS"
-        
-        data_id = non_deleted_id
-        if permanent_delete:
-            with self.db:
-                self.cursor.execute("""
+
+        with transaction(self.db) as cursor:
+            if permanent_delete:
+                cursor.execute("""
                     DELETE FROM files
                     WHERE user_id=? AND filename=? AND data_id=?
-                """, [user_id, file_path, data_id])
-        else: 
-            delete_id = str(uuid.uuid4())
-            with self.db:
-                self.cursor.execute("""
+                """, [user_id, file_path, non_deleted_id])
+            else:
+                delete_id: str = str(uuid.uuid4())
+                cursor.execute("""
                     INSERT INTO deleted_files (
                         delete_id, data_id, old_filepath
                     ) VALUES (?, ?, ?)
-                """, [delete_id, data_id, file_path])
+                """, [delete_id, non_deleted_id, file_path])
+        
         return 0
 
     def read_file(
@@ -863,82 +771,79 @@ class FileDatabase:
         if not isinstance(chunk_size, int):
             raise TypeError("'chunk_size' must be an int")
         
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data = self.cursor.fetchone()
-
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
-
-        user_id = user_data[0]
         
-        dir_exists = self.dir_checker(file_path, user_id)
-        if not dir_exists:
+        dir_id: str = self.dir_checker(username, file_path)
+        if not dir_id:
             return "NO_DIR_EXISTS"
         
-        dir_id = dir_exists[0]
-        self.cursor.execute("""
-            SELECT data_id, length(file_data) FROM files
-            WHERE filename=? AND user_id=? AND dir_id=?
-        """, [file_path, user_id, dir_id])
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT data_id, length(file_data) FROM files
+                WHERE filename=? AND user_id=? AND dir_id=?
+            """, [file_path, user_id, dir_id])
 
-        file_data = self.cursor.fetchall()
+            file_data: list[tuple[str]] = cursor.fetchall()
+        
         if not file_data:
             return "NO_FILE_EXISTS"
 
-        # [id1, id2, id3]
-        non_deleted_id = ""
-        data_length = 0
+        non_deleted_id: str = ""
+        data_length: int = 0
 
-        for file_tuple in file_data:
-            file_id = file_tuple[0]
-            self.cursor.execute("""
-                SELECT data_id FROM deleted_files
-                WHERE data_id=?
-                ORDER BY delete_date DESC
-            """, [file_id])
+        with transaction(self.db) as cursor:
+            for file_tuple in file_data:
+                file_id: str = file_tuple[0]
+                cursor.execute("""
+                    SELECT data_id FROM deleted_files
+                    WHERE data_id=?
+                    ORDER BY delete_date DESC
+                """, [file_id])
 
-            tmp_delete_data = self.cursor.fetchone()
-            if tmp_delete_data:
-                continue
+                tmp_delete_data: tuple[str] = cursor.fetchone()
+                
+                if tmp_delete_data:
+                    continue
 
-            non_deleted_id = file_id
-            data_length = file_tuple[1]
+                non_deleted_id: str = file_id
+                data_length: int = file_tuple[1]
 
-            break
+                break
 
         if not non_deleted_id:
             return "NO_FILE_EXISTS"
 
-        data_id = non_deleted_id
-        self.cursor.execute("""
-            SELECT config FROM files_config
-            WHERE data_id=?
-        """, [data_id])
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT config FROM files_config
+                WHERE data_id=?
+            """, [non_deleted_id])
 
-        msgpack_config = self.cursor.fetchone()[0]
-        config = msgpack.unpackb(msgpack_config)
+            msgpack_config: bytes = cursor.fetchone()[0]
+        
+        config: dict = msgpack.unpackb(msgpack_config)
 
-        if config['chunk_size_used'] != chunk_size:
-            chunk_size = config['chunk_size_used']
+        if config['chunk-size'] != chunk_size:
+            chunk_size: int = config['chunk-size']
 
         def generator():
-            offset = 0
-            while offset < data_length:
-                self.cursor.execute("""
-                    SELECT substr(file_data, ?, ?) 
-                    FROM files
-                    WHERE data_id=?
-                """, (offset + 1, chunk_size, data_id))
+            offset: int = 1
+            with transaction(self.db) as cursor:
+                while offset < data_length:
+                    cursor.execute("""
+                        SELECT substr(file_data, ?, ?) 
+                        FROM files WHERE data_id=?
+                    """, (offset, chunk_size, non_deleted_id))
 
-                chunk = self.cursor.fetchone()[0]
-                offset += chunk_size
+                    chunk: bytes = cursor.fetchone()[0]
+                    offset += chunk_size
 
-                if config['encrypted']:
-                    chunk: bytes = self.cipher.decrypt(chunk)
-                
-                yield chunk
+                    if self.conf_secrets['use_encryption']:
+                        chunk: bytes = self.cipher.decrypt(chunk)
+                    
+                    yield chunk
         
         # Returning generator() instead of yield directly
         # allows the function to return plain values instead of
@@ -946,10 +851,10 @@ class FileDatabase:
         return generator()
         
 
-class DirectoryInterface:
-    def __init__(self, parent: FileDatabase) -> None:
+class DatabaseAdmin:
+    def __init__(self, parent: FileDatabase, log_level: int = logging.DEBUG) -> None:
         self.db: sqlite3.Connection = parent.db
-        self.cursor: sqlite3.Cursor = parent.cursor
+        self.recovery_mode: bool = parent.recovery_mode
 
         self.pw_hasher: argon2.PasswordHasher = parent.pw_hasher
         self.cipher: SimpleCipher = parent.cipher
@@ -957,10 +862,312 @@ class DirectoryInterface:
         self.conf_secrets: dict = parent.conf_secrets
         self.conf_vars: dict = parent.conf_vars
 
-        self._cipher_key: bytes | str = parent._cipher_key
-        self.cipher_conf: dict = self.conf_secrets['encryption_config']
+        self.cipher_conf: dict = parent.cipher_conf
+        self.hash_method = parent.hash_method
 
-        self.dir_checker: Callable = parent.dir_checker
+        self.logger: logging.Logger = logging.getLogger(f"{__name__}: serverDB-DBAdmin")
+        self.logger.setLevel(log_level)
+
+        formatter: logging.Formatter = logging.Formatter(
+            '[syncServer-serverDB: DatabaseAdmin]: [%(asctime)s] - [%(levelname)s] - %(message)s', 
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        file_handler: logging.FileHandler = logging.FileHandler(LOGFILE)
+
+        file_handler.setFormatter(formatter)
+        self.logger.addHandler(file_handler)
+
+    def set_protection(
+            self, cipher_key: bytes | str,
+            recovery_key_path: str = ''
+    ) -> int:
+        """
+        Update encryption key or disable encryption, then write recovery key to file.
+        Set `cipher_key` to an empty string to disable encryption.  
+        """
+        if self.recovery_mode:
+            raise RuntimeError("cannot edit database configuration, currently in recovery mode")
+        
+        if not isinstance(recovery_key_path, str):
+            raise TypeError("recovery key path must be a string")
+        
+        match cipher_key:
+            case bytes():
+                pass
+            case str():
+                cipher_key: bytes = cipher_key.encode('utf-8')
+            case _:
+                raise TypeError("encryption key is not bytes or string")
+
+        if os.path.isfile(recovery_key_path) and cipher_key:
+            raise FileExistsError(f"cannot overwrite existing recovery key file: {recovery_key_path}")
+        
+        if not recovery_key_path and cipher_key:
+            raise ValueError("recovery key path cannot be empty")
+        
+        conf_secrets: dict = copy.deepcopy(self.conf_secrets)
+        conf_vars: dict = copy.deepcopy(self.conf_vars)
+
+        if not cipher_key:  # False
+            conf_secrets['use_encryption'] = False
+            conf_vars['syncServer-protected'] = False
+
+            bytes_encoded_secrets: bytes = msgpack.packb(conf_secrets)
+            bytes_encoded_vars: bytes = msgpack.packb(conf_vars)
+
+            try:
+                with transaction(self.db) as cursor:
+                    cursor.execute("""
+                        UPDATE config
+                        SET config_data=?, config_vars=?
+                        WHERE config_id='main'
+                    """, [bytes_encoded_secrets, bytes_encoded_vars])
+            except sqlite3.Error:  # type: ignore
+                self.logger.exception("(set_protection): Failed to write configuration to database")
+                return 2
+            
+            self.logger.info("(set_protection): Disabled database protection")
+            self.conf_secrets: dict = conf_secrets
+
+            self.conf_vars: dict = conf_vars
+            return 0 
+        
+        recovery_key: str = secrets.token_hex(32)
+        current_umask: int = os.umask(0)
+        
+        mainkey_cipher: SimpleCipher = SimpleCipher(cipher_key, hash_method=self.hash_method)
+        recoverykey_cipher: SimpleCipher = SimpleCipher(recovery_key, hash_method=self.hash_method)
+
+        encrypted_cipher_key: bytes = recoverykey_cipher.encrypt(cipher_key)
+
+        conf_vars['syncServer-recoveryKey'] = encrypted_cipher_key
+        conf_secrets['use_encryption'] = True
+
+        conf_vars['syncServer-protected'] = True
+        conf_vars['syncServer-encryptionEnabled'] = True
+
+        encrypted_secrets: bytes = mainkey_cipher.encrypt(msgpack.packb(conf_secrets))
+        encoded_vars: bytes = msgpack.packb(conf_vars)
+
+        try:
+            with os.fdopen(os.open(recovery_key_path, os.O_WRONLY | os.O_CREAT, 0o600), 'w') as f:
+                f.write(recovery_key)
+            
+            self.logger.info("(set_protection: Wrote recovery key to file '%s'", recovery_key_path)
+        except IOError:
+            self.logger.exception("(set_protection): Failed to write recovery key")
+            return 1
+        finally:
+            os.umask(current_umask)
+        
+        try:
+            with transaction(self.db) as cursor:
+                cursor.execute("""
+                    UPDATE config
+                    SET config_data=?, config_vars=?
+                    WHERE config_id='main'
+                """, [
+                    encrypted_secrets,
+                    encoded_vars
+                ])
+        except Exception:  # type: ignore
+            self.logger.exception("(set_protection): Failed to write configuration to database")
+            os.remove(recovery_key_path)
+
+            self.logger.info("(set_protection): Removed recovery key file '%s'", recovery_key_path)
+            return 2
+
+        self.logger.info("(set_protection): Encrypted config secrets and wrote config to database")
+
+        self.conf_secrets: dict = conf_secrets
+        self.conf_vars: dict = conf_vars
+        return 0
+
+    def save_conf(self, _secrets: dict = None, _vars: dict = None) -> int:
+        if not _secrets:
+            pass
+        elif self.conf_vars['syncServer-protected']:
+            conf_secrets: bytes = self.cipher.encrypt(msgpack.packb(_secrets))
+        else:
+            conf_secrets: bytes = msgpack.packb(_secrets)
+        
+        with transaction(self.db) as cursor:
+            if _secrets:
+                cursor.execute("""
+                    UPDATE config
+                    SET config_data=?
+                    WHERE config_id='main'
+                """, [conf_secrets])
+            if _vars:
+                cursor.execute("""
+                    UPDATE config
+                    SET config_vars=?
+                    WHERE config_id='main'
+                """, [msgpack.packb(_vars)])
+        
+        return 0
+
+    def update_encryption(
+            self, old_key: bytes | str = b'',
+            new_key: bytes | str = b''
+    ) -> int:
+        if self.recovery_mode:
+            raise RuntimeError("cannot edit database configuration, currently in recovery mode")
+        
+        match old_key:
+            case bytes():
+                pass
+            case str():
+                old_key: bytes = old_key.encode('utf-8')
+            case _:
+                raise TypeError("old encryption key is not bytes or string")
+        
+        match new_key:
+            case bytes():
+                pass
+            case str():
+                new_key: bytes = new_key.encode('utf-8')
+            case _:
+                raise TypeError("new encryption key is not bytes or string")
+        
+        # Have to fetch the user_id and dir_id due to SQLite foreign key constraints
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT data_id, length(file_data), user_id, dir_id
+                FROM files
+            """)
+            file_data: list[tuple[str, int, str, str]] = cursor.fetchall()
+
+        oldkey_cipher: SimpleCipher = SimpleCipher(
+            old_key, hash_method=self.hash_method,
+            hash_pepper=self.cipher_conf['hash_pepper'],
+            password_pepper=self.cipher_conf['password_pepper']
+        )
+        newkey_cipher: SimpleCipher = SimpleCipher(
+            new_key, hash_method=self.hash_method,
+            hash_pepper=self.cipher_conf['hash_pepper'],
+            password_pepper=self.cipher_conf['password_pepper']
+        )
+        
+        for file_tuple in file_data:
+            file_id: str = file_tuple[0]
+            data_length: int = file_tuple[1]
+
+            user_id: str = file_tuple[2]
+            dir_id: str = file_tuple[3]
+
+            tmp_id: str = secrets.token_hex(32)
+            with transaction(self.db) as cursor:
+                cursor.execute("""
+                    SELECT config FROM files_config
+                    WHERE data_id=?
+                """, [file_id])
+
+                fetched_conf: tuple[bytes] = cursor.fetchone()
+                if not fetched_conf:
+                    self.logger.warning("(update_encryption): File ID '%s' has no file config data", file_id)
+                    continue
+
+                msgpack_file_conf: bytes = fetched_conf[0]
+                file_conf: dict = msgpack.unpackb(msgpack_file_conf)
+
+                chunk_size: int = file_conf['chunk-size']
+                copy_offset: int = 1
+
+                write_offset: int = 1
+                cursor.execute("""
+                    INSERT INTO files (data_id, dir_id, user_id, filename, file_data)
+                    VALUES (?, ?, ?, ?, ?)
+                """, [tmp_id, dir_id, user_id, '', b''])
+                
+                while copy_offset < data_length:
+                    cursor.execute("""
+                        SELECT substr(file_data, ?, ?)
+                        FROM files
+                        WHERE data_id=?
+                    """, [copy_offset, chunk_size, file_id])
+                    chunk: bytes = cursor.fetchone()[0]
+
+                    copy_offset += chunk_size
+                    cursor.execute("""
+                        UPDATE files
+                        SET file_data = cast(file_data || ? AS BLOB)
+                        WHERE data_id=?
+                    """, [chunk, tmp_id])
+                
+                cursor.execute("""
+                    UPDATE files SET file_data=cast(? AS BLOB)
+                    WHERE data_id=?
+                """, [b'', file_id])
+                
+                while write_offset < data_length:
+                    cursor.execute("""
+                        SELECT substr(file_data, ?, ?)
+                        FROM files
+                        WHERE data_id=?
+                    """, [write_offset, chunk_size, tmp_id])
+                    data: bytes = cursor.fetchone()[0]
+
+                    if old_key:
+                        chunk: bytes = oldkey_cipher.decrypt(data)
+                    
+                    if new_key:
+                        chunk: bytes = newkey_cipher.encrypt(chunk)
+                    
+                    write_offset += chunk_size
+                    cursor.execute("""
+                        UPDATE files SET file_data = cast(file_data || ? AS BLOB)
+                        WHERE data_id=?
+                    """, [chunk, file_id])
+                
+                cursor.execute("DELETE FROM files WHERE data_id=?", [tmp_id])
+            
+            vac_cur: sqlite3.Cursor = self.db.cursor()
+            vac_cur.execute("VACUUM")
+            
+            vac_cur.close()
+            self.logger.info("(update_encryption): Updated file '%s' for user ID '%s'", file_id, user_id)
+
+        return 0
+    
+    def key_recovery(self, recovery_key: bytes | str) -> int | dict:
+        match recovery_key:
+            case bytes():
+                pass
+            case str():
+                recovery_key: bytes = recovery_key.encode('utf-8')
+            case _:
+                raise TypeError("recovery key is not bytes or string")
+        
+        recov_cipher: SimpleCipher = SimpleCipher(recovery_key, hash_method=self.hash_method)
+        original_encrypted_key: bytes = self.conf_vars.get('syncServer-recoveryKey')
+
+        if not original_encrypted_key:
+            raise ValueError("'syncServer-recoveryKey' could not be found in the config variables")
+        
+        try:
+            original_key: bytes = recov_cipher.decrypt(original_encrypted_key)
+        except cryptography.exceptions.InvalidTag:
+            self.logger.error("(key_recovery): Key decryption failed using recovery key")
+            return 1
+        
+        return original_key
+
+
+class DirectoryInterface:
+    def __init__(self, parent: FileDatabase) -> None:
+        self.db: sqlite3.Connection = parent.db
+
+        self.pw_hasher: argon2.PasswordHasher = parent.pw_hasher
+        self.cipher: SimpleCipher = parent.cipher
+
+        self.conf_secrets: dict = parent.conf_secrets
+        self.conf_vars: dict = parent.conf_vars
+
+        self.cipher_conf: dict = self.conf_secrets['encryption_config']
+        self._get_userid = parent._get_userid
+
+        self._get_dirid = parent._get_dirid
     
     def make_dir(
             self, username: str,
@@ -969,22 +1176,12 @@ class DirectoryInterface:
         if not isinstance(dir_path, str):
             raise TypeError("'dir_path' must be string")
         
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data = self.cursor.fetchone()
-
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
         
-        user_id = user_data[0]
-        self.cursor.execute("""
-            SELECT dir_id FROM directories
-            WHERE dir_name=? AND user_id=?
-        """, [dir_path, user_id])
-
-        found_filename = self.cursor.fetchone()
-        if found_filename:
+        dir_id: str = self._get_dirid(dir_path, user_id)
+        if dir_id:
             return "DIR_EXISTS"
         
         if not dir_path:
@@ -993,7 +1190,7 @@ class DirectoryInterface:
         if dir_path[0] != "/":
             dir_path = "/" + dir_path
         
-        dirs = dir_path.split("/")
+        dirs: list[str] = dir_path.split("/")
         for i, dir_name in enumerate(dirs):
             if i == 0:
                 continue
@@ -1001,9 +1198,9 @@ class DirectoryInterface:
             if not dir_name:
                 return "INVALID_DIR_PATH"
             
-        dir_id = str(uuid.uuid4())
-        with self.db:
-            self.cursor.execute("""
+        dir_id: str = str(uuid.uuid4())
+        with transaction(self.db) as cursor:
+            cursor.execute("""
                 INSERT INTO directories (dir_id, user_id, dir_name)
                 VALUES (?, ?, ?)
             """, [dir_id, user_id, dir_path])
@@ -1017,29 +1214,18 @@ class DirectoryInterface:
         if not isinstance(dir_path, str):
             raise TypeError("'dir_path' must be string")
         
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data = self.cursor.fetchone()
-
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
         
-        user_id = user_data[0]
-        self.cursor.execute("""
-            SELECT dir_id FROM directories
-            WHERE dir_name=? AND user_id=?
-        """, [dir_path, user_id])
-
-        found_dir = self.cursor.fetchone()
-        if not found_dir:
+        dir_id: str = self._get_dirid(dir_path, user_id)
+        if not dir_id:
             return "NO_DIR_EXISTS"
         
-        dir_id = found_dir[0]
         if dir_path == "/":
             return "ROOT_DIR"
         
-        dirs = dir_path.split("/")
+        dirs: list[str] = dir_path.split("/")
         for i, dir_name in enumerate(dirs):
             if i == 0:
                 continue
@@ -1047,8 +1233,8 @@ class DirectoryInterface:
             if not dir_name:
                 return "INVALID_DIR_PATH"
 
-        with self.db:
-            self.cursor.execute("""
+        with transaction(self.db) as cursor:
+            cursor.execute("""
                 DELETE FROM directories
                 WHERE dir_id=? AND user_id=?
             """, [dir_id, user_id])
@@ -1065,22 +1251,12 @@ class DirectoryInterface:
         if not isinstance(list_deleted_only, bool):
             raise TypeError("'list_deleted_only' can only be bool")
         
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data: tuple[str] = self.cursor.fetchone()
-
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
         
-        user_id: str = user_data[0]
-        self.cursor.execute("""
-            SELECT dir_id FROM directories
-            WHERE dir_name=? AND user_id=?
-        """, [dir_path, user_id])
-
-        found_dir: tuple[str] = self.cursor.fetchone()
-        if not found_dir:
+        dir_id: str = self._get_dirid(dir_path, user_id)
+        if not dir_id:
             return "NO_DIR_EXISTS"
         
         dirs: list[str] = dir_path.split("/")
@@ -1093,19 +1269,21 @@ class DirectoryInterface:
             if not dir_name:
                 return "INVALID_DIR_PATH"
 
-        dir_id: str = found_dir[0]
-        self.cursor.execute("""
-            SELECT filename, data_id FROM files
-            WHERE dir_id=? AND user_id=?
-        """, [dir_id, user_id])
-        dir_listing: list[tuple[str, str]] = self.cursor.fetchall()
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT filename, data_id FROM files
+                WHERE dir_id=? AND user_id=?
+            """, [dir_id, user_id])
+            dir_listing: list[tuple[str, str]] = cursor.fetchall()
 
         def is_deleted(file_id):
-            self.cursor.execute("""
-                SELECT data_id FROM deleted_files
-                WHERE data_id=?
-            """, [file_id])
-            delete_data: tuple[str] | None = self.cursor.fetchone()
+            with transaction(self.db) as cursor:
+                cursor.execute("""
+                    SELECT data_id FROM deleted_files
+                    WHERE data_id=?
+                """, [file_id])
+                delete_data: tuple[str] | None = cursor.fetchone()
+            
             return bool(delete_data) 
         
         if list_deleted_only:
@@ -1116,21 +1294,18 @@ class DirectoryInterface:
         return files
     
     def get_dir_paths(self, username: str) -> str | list[str]:
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data: tuple[str] = self.cursor.fetchone()
-
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
         
-        user_id: str = user_data[0]
-        self.cursor.execute("""
-            SELECT dir_name FROM directories
-            WHERE user_id=?
-        """, [user_id])
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT dir_name FROM directories
+                WHERE user_id=?
+            """, [user_id])
 
-        dirs: list[tuple[str]] = self.cursor.fetchall()
+            dirs: list[tuple[str]] = cursor.fetchall()
+        
         if not dirs:
             return "NO_DIRS"  # This means even the root directory (/) is missing
         
@@ -1140,7 +1315,6 @@ class DirectoryInterface:
 class DeletedFiles:
     def __init__(self, parent: FileDatabase) -> None:
         self.db: sqlite3.Connection = parent.db
-        self.cursor: sqlite3.Cursor = parent.cursor
 
         self.pw_hasher: argon2.PasswordHasher = parent.pw_hasher
         self.cipher: SimpleCipher = parent.cipher
@@ -1148,10 +1322,10 @@ class DeletedFiles:
         self.conf_secrets: dict = parent.conf_secrets
         self.conf_vars: dict = parent.conf_vars
 
-        self._cipher_key: bytes | str = parent._cipher_key
         self.cipher_conf: dict = self.conf_secrets['encryption_config']
-
         self.dir_checker = parent.dir_checker
+
+        self._get_userid = parent._get_userid
     
     def list_deleted(
             self, username: str,
@@ -1160,22 +1334,17 @@ class DeletedFiles:
         if not isinstance(file_path, str):
             raise TypeError("'file_path' must be string")
 
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data: tuple[str] = self.cursor.fetchone()
-
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
 
-        user_id: str = user_data[0]
-
         if file_path == ":all:":
-            self.cursor.execute("""
-                SELECT filename, data_id FROM files
-                WHERE user_id=?
-            """, [user_id])
-            file_ids = self.cursor.fetchall()
+            with transaction(self.db) as cursor:
+                cursor.execute("""
+                    SELECT filename, data_id FROM files
+                    WHERE user_id=?
+                """, [user_id])
+                file_ids: list[tuple[str, str]] = cursor.fetchall()
 
             grouped_data: dict[str, list] = {}
             for item in file_ids:
@@ -1189,52 +1358,55 @@ class DeletedFiles:
             result: list = [[(key, val) for val in grouped_data[key]] for key in grouped_data]
             all_results: dict = {}
 
-            for path_and_id_tuple in result:
-                for file_path, file_id in path_and_id_tuple:
-                    if file_path not in all_results:
-                        all_results[file_path] = []
+            with transaction(self.db) as cursor:
+                for path_and_id_tuple in result:
+                    for file_path, file_id in path_and_id_tuple:
+                        if file_path not in all_results:
+                            all_results[file_path] = []
+                        
+                        cursor.execute("""
+                            SELECT delete_date FROM deleted_files
+                            WHERE data_id=?
+                            ORDER BY delete_date DESC
+                        """, [file_id])
+                        tmp_del_date: tuple[str] = cursor.fetchone()
+
+                        if tmp_del_date:
+                            all_results[file_path].append(tmp_del_date[0])
                     
-                    self.cursor.execute("""
-                        SELECT delete_date FROM deleted_files
-                        WHERE data_id=?
-                        ORDER BY delete_date DESC
-                    """, [file_id])
-                    tmp_del_date = self.cursor.fetchone()
-                    if tmp_del_date:
-                        all_results[file_path].append(tmp_del_date[0])
+                    file_path = path_and_id_tuple[0][0]
+                    all_results[file_path] = sorted(all_results[file_path], reverse=True)
                 
-                file_path = path_and_id_tuple[0][0]
-                all_results[file_path] = sorted(all_results[file_path], reverse=True)
-            
             return all_results
 
-        dir_exists: tuple[str] = self.dir_checker(file_path, user_id)
-        if not dir_exists:
+        dir_id: str = self.dir_checker(username, file_path)
+        if not dir_id:
             return "NO_DIR_EXISTS"
 
-        dir_id: str = dir_exists[0]
-        self.cursor.execute("""
-            SELECT data_id FROM files
-            WHERE filename=? AND user_id=? AND dir_id=?
-        """, [file_path, user_id, dir_id])
-
-        file_data: list[tuple[str]] = self.cursor.fetchall()
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT data_id FROM files
+                WHERE filename=? AND user_id=? AND dir_id=?
+            """, [file_path, user_id, dir_id])
+            file_data: list[tuple[str]] = cursor.fetchall()
+        
         if not file_data:
             return "NO_MATCHING_FILES"
 
         delete_data: list = []
-        for file_tuple in file_data:
-            file_id: str = file_tuple[0]
-            self.cursor.execute("""
-                SELECT delete_date FROM deleted_files
-                WHERE data_id=?
-                ORDER BY delete_date DESC;
-            """, [file_id])
+        with transaction(self.db) as cursor:
+            for file_tuple in file_data:
+                file_id: str = file_tuple[0]
+                cursor.execute("""
+                    SELECT delete_date FROM deleted_files
+                    WHERE data_id=?
+                    ORDER BY delete_date DESC;
+                """, [file_id])
 
-            tmp_delete_data: tuple[str] = self.cursor.fetchone()
-            if tmp_delete_data:
-                delete_data.append(tmp_delete_data[0])
-                continue
+                tmp_delete_data: tuple[str] = cursor.fetchone()
+                if tmp_delete_data:
+                    delete_data.append(tmp_delete_data[0])
+                    continue
 
         if not delete_data:
             return "NO_MATCHING_FILES"
@@ -1253,49 +1425,45 @@ class DeletedFiles:
             # Removed implicit restore
             raise TypeError("'restore_which' must be an int")
         
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data: tuple[str] = self.cursor.fetchone()
-
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
-
-        user_id: str = user_data[0]
-
-        dir_exists: tuple[str] = self.dir_checker(file_path, user_id)
-        if not dir_exists:
+        
+        dir_id: str = self.dir_checker(username, file_path)
+        if not dir_id:
             return "NO_DIR_EXISTS"
 
-        dir_id: str = dir_exists[0]
-        self.cursor.execute("""
-            SELECT data_id FROM files
-            WHERE filename=? AND user_id=? AND dir_id=?
-        """, [file_path, user_id, dir_id])
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT data_id FROM files
+                WHERE filename=? AND user_id=? AND dir_id=?
+            """, [file_path, user_id, dir_id])
 
-        file_data: list[tuple[str]] = self.cursor.fetchall()
+            file_data: list[tuple[str]] = cursor.fetchall()
+        
         if not file_data:
             return "NO_FILE_EXISTS"
 
         delete_data: list = []
-        for file_tuple in file_data:
-            file_id: str = file_tuple[0]
-            self.cursor.execute("""
-                SELECT data_id FROM deleted_files
-                WHERE data_id=?
-                ORDER BY delete_date DESC
-            """, [file_id])
+        with transaction(self.db) as cursor:
+            for file_tuple in file_data:
+                file_id: str = file_tuple[0]
+                cursor.execute("""
+                    SELECT data_id FROM deleted_files
+                    WHERE data_id=?
+                    ORDER BY delete_date DESC
+                """, [file_id])
 
-            tmp_delete_data: tuple[str] = self.cursor.fetchone()
-            if tmp_delete_data:
-                del_data_id = tmp_delete_data[0]
-                delete_data.append(del_data_id)
+                tmp_delete_data: tuple[str] = cursor.fetchone()
+                if tmp_delete_data:
+                    del_data_id = tmp_delete_data[0]
+                    delete_data.append(del_data_id)
 
-                continue
+                    continue
 
-            # Assume all IDs are in the deleted_files table, if not
-            # then assume there is one file that is not marked deleted
-            return "FILE_CONFLICT"
+                # Assume all IDs are in the deleted_files table, if not
+                # then assume there is one file that is not marked deleted
+                return "FILE_CONFLICT"
 
         if not delete_data:
             return "FILE_NOT_DELETED"
@@ -1317,12 +1485,12 @@ class DeletedFiles:
         # SQLite3 returns the whole list oldest -> latest so we reverse it
         delete_data: list = list(reversed(delete_data))
 
-        with self.db:
+        with transaction(self.db) as cursor:
             # Fetch the list with the data ids and then get the data id
             # [ ('data-id') ] -> delete_data[restore_which]
 
             data_id: str = delete_data[restore_which]
-            self.cursor.execute("""
+            cursor.execute("""
                 DELETE FROM deleted_files
                 WHERE data_id=?
             """, [data_id])
@@ -1340,44 +1508,41 @@ class DeletedFiles:
         if not (delete_which == ":all:" or isinstance(delete_which, int)):
             raise TypeError("'delete_which' can only be an int or ':all:'")
         
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data: tuple[str] = self.cursor.fetchone()
-
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
-
-        user_id: str = user_data[0]
-        dir_exists: tuple[str] = self.dir_checker(file_path, user_id)
-        if not dir_exists:
+        
+        dir_id: str = self.dir_checker(username, file_path)
+        if not dir_id:
             return "NO_DIR_EXISTS"
 
-        dir_id: str = dir_exists[0]
-        self.cursor.execute("""
-            SELECT data_id FROM files
-            WHERE filename=? AND user_id=? AND dir_id=?
-        """, [file_path, user_id, dir_id])
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT data_id FROM files
+                WHERE filename=? AND user_id=? AND dir_id=?
+            """, [file_path, user_id, dir_id])
 
-        file_data: list[tuple[str]] = self.cursor.fetchall()
+            file_data: list[tuple[str]] = cursor.fetchall()
+        
         if not file_data:
             return "NO_MATCHING_FILES"
 
         delete_data: list = []
-        for file_tuple in file_data:
-            file_id: str = file_tuple[0]
-            self.cursor.execute("""
-                SELECT data_id FROM deleted_files
-                WHERE data_id=?
-                ORDER BY delete_date DESC
-            """, [file_id])
+        with transaction(self.db) as cursor:
+            for file_tuple in file_data:
+                file_id: str = file_tuple[0]
+                cursor.execute("""
+                    SELECT data_id FROM deleted_files
+                    WHERE data_id=?
+                    ORDER BY delete_date DESC
+                """, [file_id])
 
-            tmp_delete_data: tuple[str] = self.cursor.fetchone()
-            if tmp_delete_data:
-                del_data_id: str = tmp_delete_data[0]
-                delete_data.append(del_data_id)
+                tmp_delete_data: tuple[str] = cursor.fetchone()
+                if tmp_delete_data:
+                    del_data_id: str = tmp_delete_data[0]
+                    delete_data.append(del_data_id)
 
-                continue
+                    continue
         
         if not delete_data:
             return "NO_MATCHING_FILES"
@@ -1402,28 +1567,26 @@ class DeletedFiles:
         # SQLite3 returns the whole list oldest -> latest so we reverse it
         delete_data: list[str] = list(reversed(delete_data))
 
-        if delete_which == ":all:":
-            with self.db:
+        with transaction(self.db) as cursor:
+            if delete_which == ":all:":            
                 for file_id_to_delete in delete_data:
-                    self.cursor.execute("""
+                    cursor.execute("""
                         DELETE FROM files
                         WHERE data_id=?
                     """, [file_id_to_delete])
-        else:
-            with self.db:
+            else:
                 delete_which_id: str = delete_data[delete_which]
-                self.cursor.execute("""
+                cursor.execute("""
                     DELETE FROM files
                     WHERE data_id=?
                 """, [delete_which_id])
-        
+            
         return 0
 
 
 class APIKeyInterface:
     def __init__(self, parent: FileDatabase) -> None:
         self.db: sqlite3.Connection = parent.db
-        self.cursor: sqlite3.Cursor = parent.cursor
 
         self.pw_hasher: argon2.PasswordHasher = parent.pw_hasher
         self.cipher: SimpleCipher = parent.cipher
@@ -1431,10 +1594,10 @@ class APIKeyInterface:
         self.conf_secrets: dict = parent.conf_secrets
         self.conf_vars: dict = parent.conf_vars
 
-        self._cipher_key: bytes | str = parent._cipher_key
         self.cipher_conf: dict = self.conf_secrets['encryption_config']
 
         self.perms_list: list[str] = ['create', 'read', 'update', 'delete', 'all']
+        self._get_userid = parent._get_userid
     
     def _hash_key(self, api_key: str) -> str:
         if not isinstance(api_key, str):
@@ -1447,18 +1610,17 @@ class APIKeyInterface:
 
         return hashed_apikey
     
-    def get_key_owner(
-        self, api_key: str
-    ) -> str:
+    def get_key_owner(self, api_key: str) -> str:
         if not isinstance(api_key, str):
             raise TypeError("'api_key' must be a string")
 
         hashed_apikey: str = self._hash_key(api_key)
-        self.cursor.execute("""
-            SELECT user_id, key_id FROM user_apikeys
-            WHERE api_key=?
-        """, [hashed_apikey])
-        key_data: tuple[str] = self.cursor.fetchone()
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT user_id, key_id FROM user_apikeys
+                WHERE api_key=?
+            """, [hashed_apikey])
+            key_data: tuple[str] = cursor.fetchone()
         
         if not key_data:
             return "INVALID_APIKEY"
@@ -1466,12 +1628,13 @@ class APIKeyInterface:
         user_id: str = key_data[0]
         key_id: str = key_data[1]
 
-        self.cursor.execute("""
-            SELECT username FROM users
-            WHERE user_id=?
-        """, [user_id])
-        user_data: tuple[str] = self.cursor.fetchone()
-        
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT username FROM users
+                WHERE user_id=?
+            """, [user_id])
+            user_data: tuple[str] = cursor.fetchone()
+            
         if not user_data:
             logging.warning(
                 "[APIKeyInterface-keyWithoutOwner]: An key was found in "
@@ -1496,12 +1659,13 @@ class APIKeyInterface:
             return "INVALID_PERMISSION"
         
         hashed_apikey: str = self._hash_key(api_key)
-        self.cursor.execute("""
-            SELECT user_id, key_perms FROM user_apikeys
-            WHERE api_key=?
-        """, [hashed_apikey])
-        perms_data: tuple[str] = self.cursor.fetchone()
-        
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT user_id, key_perms FROM user_apikeys
+                WHERE api_key=?
+            """, [hashed_apikey])
+            perms_data: tuple[str] = cursor.fetchone()
+            
         if not perms_data:
             return "INVALID_APIKEY"
 
@@ -1544,39 +1708,34 @@ class APIKeyInterface:
             # Prevent creating an already expired API key
             return "DATE_EXPIRED"
         
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data: tuple[str] = self.cursor.fetchone()
-
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
-        
-        user_id: str = user_data[0]
-        
-        self.cursor.execute("""
-            SELECT key_id FROM user_apikeys
-            WHERE key_name=? AND user_id=?
-        """, [key_name, user_id])
-        key_data: tuple[str] = self.cursor.fetchone()
-
-        if key_data:
-            return "APIKEY_EXISTS"
         
         salt: bytes = secrets.token_hex(32)
         hashed_userid: str = self.cipher.hash_data(user_id + salt)
 
         api_key: str = f"syncServer-{hashed_userid}"
         hashed_apikey: str = self._hash_key(api_key)
-        with self.db:
-            key_id: str = str(uuid.uuid4())
-            encoded_key_perms: bytes = msgpack.packb(key_perms)
 
-            insert_data: list[str] = [
-                key_id, user_id, key_name,
-                hashed_apikey, encoded_key_perms, expires_on
-            ]
-            self.cursor.execute("""
+        key_id: str = str(uuid.uuid4())
+        encoded_key_perms: bytes = msgpack.packb(key_perms)
+
+        insert_data: list[str] = [
+            key_id, user_id, key_name,
+            hashed_apikey, encoded_key_perms, expires_on
+        ]
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT key_id FROM user_apikeys
+                WHERE key_name=? AND user_id=?
+            """, [key_name, user_id])
+            key_data: tuple[str] = cursor.fetchone()
+
+            if key_data:
+                return "APIKEY_EXISTS"
+            
+            cursor.execute("""
                 INSERT INTO user_apikeys (
                     key_id, user_id, key_name,
                     api_key, key_perms, expiry_date
@@ -1595,27 +1754,22 @@ class APIKeyInterface:
         if not isinstance(key_name, str):
             raise TypeError("'key_name' must be a string")
         
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data: tuple[str] = self.cursor.fetchone()
-        
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
-        
-        user_id: str = user_data[0]
-        self.cursor.execute("""
-            SELECT key_id FROM user_apikeys
-            WHERE user_id=? AND key_name=?
-        """, [user_id, key_name])
-        key_data: tuple[str] = self.cursor.fetchone()
-        
-        if not key_data:
-            return "INVALID_APIKEY"
-        
-        key_id: str = key_data[0]
-        with self.db:
-            self.cursor.execute("""
+                
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT key_id FROM user_apikeys
+                WHERE key_name=? AND user_id=?
+            """, [key_name, user_id])
+            key_data: tuple[str] = cursor.fetchone()
+
+            if not key_data:
+                return "INVALID_APIKEY"
+            
+            key_id: str = key_data[0]
+            cursor.execute("""
                 DELETE FROM user_apikeys
                 WHERE key_id=? AND user_id=?
             """, [key_id, user_id])
@@ -1626,21 +1780,17 @@ class APIKeyInterface:
         if not isinstance(username, str):
             raise TypeError("'username' must be a string")
         
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data: tuple[str] = self.cursor.fetchone()
-        
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
         
-        user_id: str = user_data[0]
-        self.cursor.execute("""
-            SELECT key_name FROM user_apikeys
-            WHERE user_id=?
-        """, [user_id])
-        key_data: tuple[str] = self.cursor.fetchall()
-        
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT key_name FROM user_apikeys
+                WHERE user_id=?
+            """, [user_id])
+            key_data: tuple[str] = cursor.fetchall()
+            
         if not key_data:
             return []
 
@@ -1651,11 +1801,12 @@ class APIKeyInterface:
             raise TypeError("'api_key' must be a string")
         
         hashed_apikey: str = self._hash_key(api_key)
-        self.cursor.execute("""
-            SELECT key_perms, expiry_date FROM user_apikeys
-            WHERE api_key=?
-        """, [hashed_apikey])
-        key_data: tuple[bytes, str] = self.cursor.fetchone()
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT key_perms, expiry_date FROM user_apikeys
+                WHERE api_key=?
+            """, [hashed_apikey])
+            key_data: tuple[bytes, str] = cursor.fetchone()
 
         if not key_data:
             return "INVALID_APIKEY"
@@ -1672,21 +1823,17 @@ class APIKeyInterface:
         if not isinstance(key_name, str):
             raise TypeError("'key_name' must be a string")
         
-        self.cursor.execute("""
-            SELECT user_id FROM users WHERE username=?
-        """, [username])
-        user_data: tuple[str] = self.cursor.fetchone()
-        
-        if not user_data:
+        user_id: str = self._get_userid(username)
+        if not user_id:
             return "NO_USER"
         
-        user_id: str = user_data[0]
-        self.cursor.execute("""
-            SELECT key_perms, expiry_date FROM user_apikeys
-            WHERE user_id=? AND key_name=?
-        """, [user_id, key_name])
-        key_data: tuple[bytes, str] = self.cursor.fetchone()
-        
+        with transaction(self.db) as cursor:
+            cursor.execute("""
+                SELECT key_perms, expiry_date FROM user_apikeys
+                WHERE user_id=? AND key_name=?
+            """, [user_id, key_name])
+            key_data: tuple[bytes, str] = cursor.fetchone()
+
         if not key_data:
             return "INVALID_APIKEY"
         
@@ -1718,29 +1865,25 @@ class APIKeyInterface:
         if not isinstance(username, str):
             raise TypeError("'username' is not a string")
         
-        if api_key:
-            hashed_apikey: str = self._hash_key(api_key)
-            self.cursor.execute("""
-                SELECT expiry_date FROM user_apikeys
-                WHERE api_key=?
-            """, [hashed_apikey])
-            expiry_data: tuple[str] = self.cursor.fetchone()
-        else:
-            self.cursor.execute("""
-                SELECT user_id FROM users WHERE username=?
-            """, [username])
-            user_data: tuple[str] = self.cursor.fetchone()
-            
-            if not user_data:
-                return "NO_USER"
-            
-            user_id: str = user_data[0]
-            self.cursor.execute("""
-                SELECT expiry_date FROM user_apikeys
-                WHERE key_name=? AND user_id=?
-            """, [key_name, user_id])
-            expiry_data: tuple[str] = self.cursor.fetchone()
+        with transaction(self.db) as cursor:
+            if api_key:
+                hashed_apikey: str = self._hash_key(api_key)
+                cursor.execute("""
+                    SELECT expiry_date FROM user_apikeys
+                    WHERE api_key=?
+                """, [hashed_apikey])
+                expiry_data: tuple[str] = cursor.fetchone()
+            else:
+                user_id: str = self._get_userid(username)
+                if not user_id:
+                    return "NO_USER"
         
+                cursor.execute("""
+                    SELECT expiry_date FROM user_apikeys
+                    WHERE key_name=? AND user_id=?
+                """, [key_name, user_id])
+                expiry_data: tuple[str] = cursor.fetchone()
+            
         if not expiry_data:
             return "INVALID_APIKEY"
         
@@ -1770,11 +1913,6 @@ class Main:
             nargs='?',
             metavar='db-path',
             help="Path to syncServer database."
-        )
-        self.parser.add_argument(
-            '--database-protected', '-dp',
-            action='store_true',
-            help="Prompt to enter the database password."
         )
         self.parser.add_argument(
             '--recover-key', '-rk',
@@ -1868,40 +2006,24 @@ class Main:
     
     def parse_args(self) -> None:
         args = self.parser.parse_args()
-        if args.database_protected:
-            db_password: str = getpass.getpass("Enter the database password: ")
-        else:
-            db_password: str = ''
+        if not args.database_path:
+            args.database_path = ''
         
+        recov_mode_db: FileDatabase = FileDatabase(
+            db_path=args.database_path,
+            recovery_mode=True
+        )
         if args.recover_key:
-            self.db: FileDatabase = FileDatabase(
-                db_path=args.database_path,
-                recovery_mode=True
-            )
-            conf_data: dict = self.db.conf_vars
-            recovery_key: bytes = conf_data.get('syncServer-recoveryKey')
+            recov_key: str = getpass.getpass("Enter the exported recovery key: ")
+            key: int | bytes = recov_mode_db.db_admin.key_recovery(recov_key)
 
-            if not recovery_key:
-                self.parser.exit(
-                    1, "Could not find recovery key entry in config variables, is encryption enabled?\n"
-                )
-
-            key_password: str = getpass.getpass("Enter the recovery key: ")            
-            recovery_cipher: SimpleCipher = SimpleCipher(key_password)
-
-            try:
-                original_key: bytes = recovery_cipher.decrypt(recovery_key)
-            except cryptography.exceptions.InvalidTag:  # type: ignore
-                self.parser.exit(1, "Decrypting recovery key failed!\n")
+            if key == 1:
+                self.parser.exit(1, "Key decryption failed! Wrong recovery key?")
             
-            self.parser.exit(0, f"Found original password: {original_key}\n")
-
+            self.parser.exit(0, f"Found original password: {key}\n")
+        
         if args.edit_vars:
-            self.db: FileDatabase = FileDatabase(
-                db_path=args.database_path,
-                recovery_mode=True
-            )
-            formatted_data: str = self._fmt_data(self.db.conf_vars, indent=4)
+            formatted_data: str = self._fmt_data(recov_mode_db.conf_vars, indent=4)
             edited_conf_data: str = self.display_conf(formatted_data)
 
             try:
@@ -1909,22 +2031,29 @@ class Main:
             except SyntaxError:
                 self.parser.exit(1, "Invalid configuration syntax, is the syntax in Python?\n")
 
-            self.db.save_conf(None, edited_conf)
-            if edited_conf == self.db.conf_vars:
+            recov_mode_db.db_admin.save_conf(None, edited_conf)
+            if edited_conf == recov_mode_db.conf_vars:
                 self.parser.exit(0, "No modifications to configuration variables.\n")
             
             self.parser.exit(0, "Saved configuration variables successfully!\n")
         
-        # Reach this point only if not recovering database
-        self.db: FileDatabase = FileDatabase(
-            db_path=args.database_path,
-            db_password=db_password
+        if recov_mode_db.conf_vars.get('syncServer-protected'):
+            db_password: str = getpass.getpass("Enter database password: ")
+        else:
+            db_password: str = ''
+        
+        normal_db: FileDatabase = FileDatabase(
+            args.database_path,
+            db_password
         )
 
+        normal_conf_secrets: dict = normal_db.conf_secrets
+        normal_conf_vars: dict = normal_db.conf_vars
+
         if args.edit_config:
-            conf_data = {
-                'secrets': self.db.conf_secrets, 
-                'vars': self.db.conf_vars
+            conf_data: dict = {
+                'secrets': normal_conf_secrets, 
+                'vars': normal_conf_vars
             }
             formatted_data: str = self._fmt_data(conf_data, indent=4)
             edited_conf_data: str = self.display_conf(formatted_data)
@@ -1935,20 +2064,18 @@ class Main:
                 self.parser.exit(1, "Invalid configuration syntax, is the syntax in Python?\n")
             
             if 'secrets' not in edited_conf or 'vars' not in edited_conf:
-                self.parser.exit(1, "'secrets' or 'vars' configuration is missing!\n")
+                self.parser.exit(2, "'secrets' or 'vars' configuration is missing!\n")
             
-            secrets_is_same: bool = self.db.conf_secrets == edited_conf['secrets']
-            vars_is_same: bool = self.db.conf_vars == edited_conf['vars']
+            secrets_is_same: bool = normal_conf_secrets == edited_conf['secrets']
+            vars_is_same: bool = normal_conf_vars == edited_conf['vars']
             if secrets_is_same and vars_is_same:
                 self.parser.exit(0, "No modifications to configuration settings.\n")
             
-            self.db.save_conf(edited_conf['secrets'], edited_conf['vars'])
+            normal_db.db_admin.save_conf(edited_conf['secrets'], edited_conf['vars'])
             self.parser.exit(0, 'Saved configuration successfully!\n')
         
         if args.set_protection:
-            conf_data: dict = {
-                'cipher_key': b""
-            }
+            conf_data: dict = {'cipher_key': b"", 'recovery_key_path': ''}
             formatted_data: str = self._fmt_data(conf_data, indent=4)
             edited_conf_data: str = self.display_conf(formatted_data)
             
@@ -1957,46 +2084,46 @@ class Main:
             except SyntaxError:
                 self.parser.exit(1, "Invalid configuration syntax, is the syntax in Python?\n")
 
-            if 'cipher_key' not in edited_conf:
-                self.parser.exit(1, "'cipher_key' configuration is missing!\n")
-            
-            cipher_key: bytes | str = edited_conf['cipher_key']
-            if not isinstance(cipher_key, (bytes, str)) and cipher_key is not None:
-                self.parser.exit(1, "Cipher key is not bytes or string!\n")
-            
-            if not cipher_key and cipher_key is not None:
-                self.parser.exit(1, "Set 'cipher_key' to None to disable protection!\n")
-            
-            if self.db.conf_vars['syncServer-encryptionEnabled']:
-                print("Warning: This will not re-encrypt existing data.")
-                warning_input: str = input(
-                    "Files and data were previously encrypted in this database "
-                    "with a different key. Proceed anyway? [y/N]: "
-                )
-                if warning_input.lower() != "y":
-                    self.parser.exit(0, "Aborted.\n")
-            
-            if os.path.isfile("./syncServer-recoveryKey.key"):
-                emsg: str = (
-                    "Warning: Recovery key file exists in current directory, "
-                    "delete or move this file before changing encryption key\n"
-                )
-                self.parser.exit(1, emsg)
-            
-            set_protection: bool = bool(cipher_key)
-            self.db.set_protection(set_protection, cipher_key)
-            
-            self.parser.exit(0, "Saved database protection status!\n")
+            cipher_key: bytes | str = edited_conf.get('cipher_key', -1)
+            recovery_key_path: bytes | str = edited_conf.get('recovery_key_path')
 
+            if cipher_key == -1:
+                self.parser.exit(2, "'cipher_key' value is missing!\n")
+            if not recovery_key_path and cipher_key:
+                self.parser.exit(2, "'recovery_key_path' value is missing!\n")
+
+            if not isinstance(cipher_key, (bytes, str)):
+                self.parser.exit(3, "Cipher key is not bytes or string!\n")
+            if not isinstance(recovery_key_path, (bytes, str)):
+                self.parser.exit(3, "Recovery key path is not bytes or string!\n")
+            
+            with transaction(normal_db.db) as cursor:
+                cursor.execute("SELECT data_id FROM files")
+                file_data: tuple[str] = cursor.fetchone()
+
+            if file_data:
+                print(
+                    "Files detected! The program will attempt to re-encrypt their contents. "
+                    "This may take a while.\n"
+                )
+                continue_input: str = input("Continue? [y/N]: ")
+                if continue_input.lower() != 'y':
+                    self.parser.exit(0, "Aborted.\n")
+                
+            normal_db.db_admin.update_encryption(db_password, cipher_key)
+            normal_db.db_admin.set_protection(cipher_key, recovery_key_path)
+
+            self.parser.exit(0, "Updated encryption key!\n")
+        
         if args.add_user:
             print("Now starting new user configuration!\n")
             username: str = input("Enter a username: ")
             password: str = getpass.getpass("Enter a password: ")
 
             if not username or not password:
-                self.parser.exit(1, "Username or password is empty!\n")
+                self.parser.exit(2, "Username or password is empty!\n")
 
-            result: str | int = self.db.add_user(username, password)
+            result: str | int = normal_db.add_user(username, password)
             if result == "USER_EXISTS":
                 self.parser.exit(1, f"User '{username}' already exists!\n")
             
@@ -2005,9 +2132,9 @@ class Main:
         if args.remove_user:
             username: str = input("Enter the username to delete: ")
             if not username:
-                self.parser.exit(1, "No username was provided!\n")
+                self.parser.exit(2, "No username was provided!\n")
             
-            result: int | str = self.db.remove_user(username)
+            result: int | str = normal_db.remove_user(username)
             if result == "NO_USER":
                 self.parser.exit(1, "User does not exist!\n")
 
