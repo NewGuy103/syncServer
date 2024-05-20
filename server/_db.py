@@ -176,7 +176,9 @@ class FileDatabase:
             os.makedirs(db_dir, exist_ok=True)
 
             db_path: str = os.path.join(db_dir, 'syncServer.db')
-        
+
+        self.__closed: bool = False
+
         self.db: sqlite3.Connection = sqlite3.connect(db_path, check_same_thread=False)
         self.pw_hasher: argon2.PasswordHasher = argon2.PasswordHasher()
 
@@ -387,6 +389,7 @@ class FileDatabase:
                 self.__data_cache[username] = user_dict
         
     def _get_userid(self, username: str) -> str:
+        self._ensure_open()
         if self._using_cache:
             user_dict: dict = self.__data_cache.get(username)
             if not user_dict:
@@ -406,6 +409,7 @@ class FileDatabase:
             return db_result[0]
     
     def _get_dirid(self, dir_path: str, user_id: str) -> str:
+        self._ensure_open()
         with transaction(self.db) as cursor:
             cursor.execute("""
                 SELECT dir_id FROM directories
@@ -418,8 +422,34 @@ class FileDatabase:
             return ''
             
         return db_result[0]
-            
+    
+    def _ensure_open(self):
+        if self.__closed:
+            raise RuntimeError("working on a closed FileDatabase instance")
+    
+    def close(self):
+        if self.__closed:
+            return
+        
+        self.db.close()
+        self.__closed: bool = True
+
+        del self.__data_cache
+        del self.db
+        del self.dirs
+        del self.deleted_files
+        del self.api_keys
+        del self.db_admin
+        del self.cipher
+        del self.pw_hasher
+        del self.hash_method
+        del self.conf_secrets
+        del self.conf_vars
+        del self.cipher_conf
+        del self.recovery_mode
+    
     def verify_user(self, username: str, token: str) -> str | bool:
+        self._ensure_open()
         if self._using_cache:
             user_dict: dict = self.__data_cache.get(username)
             if not user_dict:
@@ -466,6 +496,8 @@ class FileDatabase:
         - Returns 0 upon successful addition of the new user to the database.
         """
 
+        self._ensure_open()
+
         blacklisted_names: set = {'INVALID_APIKEY', 'APIKEY_NOT_AUTHORIZED', 'NO_USER', ''}
         if username in blacklisted_names:
             raise ValueError('cannot use blacklisted username')
@@ -491,6 +523,7 @@ class FileDatabase:
         return 0
 
     def remove_user(self, username: str) -> Literal["NO_USER"] | int:
+        self._ensure_open()
         user_id: str = self._get_userid(username)
         if not user_id:
             return "NO_USER"
@@ -508,6 +541,7 @@ class FileDatabase:
         return 0
     
     def dir_checker(self, username: str, file_path: str) -> Literal["NO_USER"] | str:
+        self._ensure_open()
         if not isinstance(file_path, str):
             raise TypeError("'file_path' must be a string")
         
@@ -537,6 +571,7 @@ class FileDatabase:
             file_stream: BinaryIO | TextIO,
             chunk_size: int = 50 * 1024 * 1024
     ) -> int | str:
+        self._ensure_open()
         if not isinstance(file_path, str):
             raise TypeError("'file_path' must be a string")
         
@@ -616,6 +651,7 @@ class FileDatabase:
             file_stream: BinaryIO | TextIO,
             chunk_size: int = 50 * 1024 * 1024
     ) -> int | str:
+        self._ensure_open()
         if not isinstance(file_path, str):
             raise TypeError("'file_path' must be string")
         
@@ -702,6 +738,7 @@ class FileDatabase:
 
             permanent_delete: bool = False
     ) -> int | str:
+        self._ensure_open()
         if not isinstance(file_path, str):
             raise TypeError("'file_path' must be string")
         
@@ -765,6 +802,7 @@ class FileDatabase:
             file_path: str,
             chunk_size: int = 50 * 1024 * 1024
     ) -> str | Generator[bytes, None, None]:
+        self._ensure_open()
         if not isinstance(file_path, str):
             raise TypeError("'file_path' must be string")
         
@@ -868,8 +906,12 @@ class DatabaseAdmin:
         self.logger: logging.Logger = logging.getLogger(f"{__name__}: serverDB-DBAdmin")
         self.logger.setLevel(log_level)
 
+        fmt_msg: str = (
+            '[syncServer-serverDB: DatabaseAdmin]: [%(asctime)s] ' 
+            '- [%(levelname)s] - (%(funcName)s): %(message)s'
+        )
         formatter: logging.Formatter = logging.Formatter(
-            '[syncServer-serverDB: DatabaseAdmin]: [%(asctime)s] - [%(levelname)s] - %(message)s', 
+            fmt_msg,
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         file_handler: logging.FileHandler = logging.FileHandler(LOGFILE)

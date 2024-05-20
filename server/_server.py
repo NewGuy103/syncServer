@@ -1,29 +1,21 @@
 import logging
 import getpass
+import atexit
 
 import secrets
 import types
 import os
+
 from typing import Generator
 
 import flask
-
-from flask import Flask, request
+from flask import Flask, request, g
 
 # from ._db import FileDatabase 
 from _db import FileDatabase  # use the above import once making setup.py
 
 __version__: str = "1.2.0"
 APP: flask.Flask = Flask(__name__)
-
-database: FileDatabase | None = None
-
-
-def SERVER_ERROR() -> flask.Response:
-    return flask.make_response({
-        'error': "Internal Server Error",
-        'ecode': "SERVER_ERROR"
-    }, 500)
 
 
 def NOT_JSON_ERROR() -> flask.Response:
@@ -33,15 +25,50 @@ def NOT_JSON_ERROR() -> flask.Response:
     }, 415)
 
 
+def create_app():
+    db_password: str = os.environ.get("SYNCSERVER_DBPASSWORD", '')
+    if not db_password:
+        db_password: str = getpass.getpass("Enter database password [or empty if not protected]: ")
+    
+    file_db: FileDatabase = FileDatabase(db_password=db_password)
+    with APP.app_context():
+        APP.config['SYNCSERVER-DATABASE'] = file_db
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='[%(asctime)s] - [%(levelname)s] - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler('syncServer-serverApp.log')
+        ]
+    )
+    return APP
+
+
+@atexit.register
+def teardown_app():
+    logging.info("Shutting down syncServer. . .")
+
+    with APP.app_context():
+        db: FileDatabase = APP.config.pop('SYNCSERVER-DATABASE', None)
+        if db is not None:
+            db.close()
+            logging.info("Closed database connection!")
+
+
 def _verify(headers: dict, _api_permission_type: str = '') -> flask.Response | int:
     """
     Return response depending on token verification status,
     can either be using username/password or API key.
     """
 
-    global database
-
+    if not flask.has_app_context():
+        raise RuntimeError("using _verify without flask app context")
+    
+    database = APP.config.get('SYNCSERVER-DATABASE')
     api_key: str = headers.get('Authorization', '')
+
     if not isinstance(api_key, str):
         return flask.make_response({
             'error': "Provided API key is not a string",
@@ -70,7 +97,7 @@ def _verify(headers: dict, _api_permission_type: str = '') -> flask.Response | i
                     "[FLASK-API-VERIFY]: API Key verifier function returned unexpected data: '%s'",
                     result
                 )
-                return SERVER_ERROR()
+                return flask.abort(500)
         
         is_expired: bool = database.api_keys.check_expired(api_key=api_key)
         if isinstance(is_expired, bool) and is_expired:
@@ -110,17 +137,32 @@ def _verify(headers: dict, _api_permission_type: str = '') -> flask.Response | i
             
     if isinstance(token_verified_result, Exception):
         logging.error("[FLASK-VERIFY-USER]: Refer to [Database.verify_user] error logs for information")
-        return SERVER_ERROR()
+        return flask.abort(500)
 
     return 0
 
 
+@APP.errorhandler(500)
+def return_servererror(e):
+    logging.error("Internal server error raised: %s", e)
+    return flask.make_response({
+        'error': "Internal Server Error",
+        'ecode': "SERVER_ERROR"
+    }, 500)
+
+
+@APP.before_request
+def init_request():
+    g.db = APP.config.get('SYNCSERVER-DATABASE')
+
+
 @APP.get('/auth/check')
 def check_creds():
-    global database
     headers = request.headers
 
-    verify_result = _verify(headers, _api_permission_type='all')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='all')
+    
     if verify_result != 0:
         return verify_result
     
@@ -140,19 +182,20 @@ def check_creds():
         }, 200)
     
     # If both are blank
-    logging.error("[/auth/check]: API key and username/password credentials are blank")
-    return SERVER_ERROR()
+    logging.error("[/auth/check]: Reached unreachable point in function")
+    return flask.abort(500)
 
 
 @APP.post('/api/files/upload')
-@APP.post("/upload")
 def file_uploads():
-    global database
+    database = g.db
 
     files = request.files
     headers = request.headers
 
-    verify_result = _verify(headers, _api_permission_type='create')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='create')
+    
     if verify_result != 0:
         return verify_result
 
@@ -231,7 +274,7 @@ def file_uploads():
                     "[/upload]: add_file function returned unexpected data: '%s'",
                     result
                 )
-                return SERVER_ERROR()
+                return flask.abort(500)
             
     response = None
     match len(files):
@@ -255,14 +298,15 @@ def file_uploads():
 
 
 @APP.post("/api/files/modify")
-@APP.post("/modify")
 def file_updates():
-    global database
+    database = g.db
 
     files = request.files
     headers = request.headers
 
-    verify_result = _verify(headers, _api_permission_type='update')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='update')
+    
     if verify_result != 0:
         return verify_result
 
@@ -342,7 +386,7 @@ def file_updates():
                     "[/modify]: modify_file function returned unexpected data: '%s'",
                     result
                 )
-                return SERVER_ERROR()
+                return flask.abort(500)
             
     response: dict = None
     match len(files):
@@ -366,9 +410,8 @@ def file_updates():
 
 
 @APP.post("/api/files/delete")
-@APP.post("/delete")
 def file_deletes():
-    global database
+    database = g.db
 
     if not request.is_json:
         return NOT_JSON_ERROR()
@@ -376,7 +419,9 @@ def file_deletes():
     data = request.json
     headers = request.headers
 
-    verify_result = _verify(headers, _api_permission_type='delete')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='delete')
+    
     if verify_result != 0:
         return verify_result
             
@@ -450,7 +495,7 @@ def file_deletes():
                     "[/delete]: remove_file function returned unexpected data: '%s'",
                     result
                 )
-                return SERVER_ERROR()
+                return flask.abort(500)
             
     response: dict = None
     match len(filenames):
@@ -480,9 +525,8 @@ def file_deletes():
 
 
 @APP.post("/api/files/restore")
-@APP.post("/restore")
 def file_restores():
-    global database
+    database = g.db
 
     if not request.is_json:
         return NOT_JSON_ERROR()
@@ -490,7 +534,9 @@ def file_restores():
     data = request.json
     headers = request.headers
 
-    verify_result = _verify(headers, _api_permission_type='update')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='update')
+    
     if verify_result != 0:
         return verify_result
             
@@ -572,15 +618,14 @@ def file_restores():
                 "[/restore]: deleted_files.restore_file function returned unexpected data: '%s'",
                 result
             )
-            return SERVER_ERROR()
+            return flask.abort(500)
                 
     return flask.make_response(response, response_code)
 
 
 @APP.post("/api/files/list-deleted")
-@APP.post('/list-deleted')
 def list_deleted():
-    global database
+    database = g.db
 
     if not request.is_json:
         return NOT_JSON_ERROR()
@@ -588,7 +633,9 @@ def list_deleted():
     data = request.json
     headers = request.headers
 
-    verify_result = _verify(headers, _api_permission_type='read')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='read')
+    
     if verify_result != 0:
         return verify_result
             
@@ -643,15 +690,14 @@ def list_deleted():
                 "[/list-deleted]: deleted_files.list_deleted function returned unexpected data: '%s'",
                 result
             )
-            return SERVER_ERROR()
+            return flask.abort(500)
             
     return flask.make_response(response, response_code)
 
 
 @APP.post("/api/files/remove-deleted")
-@APP.post('/remove-deleted')
 def remove_deleted():
-    global database
+    database = g.db
 
     if not request.is_json:
         return NOT_JSON_ERROR()
@@ -659,7 +705,9 @@ def remove_deleted():
     data = request.json
     headers = request.headers
 
-    verify_result = _verify(headers, _api_permission_type='delete')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='delete')
+    
     if verify_result != 0:
         return verify_result
             
@@ -738,15 +786,14 @@ def remove_deleted():
                 "[/remove-deleted]: deleted_files.true_delete function returned unexpected data: '%s'",
                 result
             )
-            return SERVER_ERROR()
+            return flask.abort(500)
             
     return flask.make_response(response, response_code)
 
 
 @APP.post("/api/files/read")
-@APP.post('/read')
 def file_reads():
-    global database
+    database = g.db
 
     if not request.is_json:
         return NOT_JSON_ERROR()
@@ -754,7 +801,9 @@ def file_reads():
     data = request.json
     headers = request.headers
 
-    verify_result = _verify(headers, _api_permission_type='read')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='read')
+    
     if verify_result != 0:
         return verify_result
             
@@ -811,15 +860,14 @@ def file_reads():
                 "[/read]: read_file function returned unexpected data: '%s'",
                 result
             )
-            return SERVER_ERROR()
+            return flask.abort(500)
             
     return response or flask.make_response(flask.jsonify(err_response), response_code)
         
 
 @APP.post("/api/dirs/create")
-@APP.post('/create-dir')
 def dir_creations():
-    global database
+    database = g.db
 
     if not request.is_json:
         return NOT_JSON_ERROR()
@@ -827,7 +875,9 @@ def dir_creations():
     data = request.json
     headers = request.headers
 
-    verify_result = _verify(headers, _api_permission_type='create')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='create')
+    
     if verify_result != 0:
         return verify_result
             
@@ -880,15 +930,14 @@ def dir_creations():
                 "[/create-dir]: make_dir function returned unexpected data: '%s'",
                 result
             )
-            return SERVER_ERROR()
+            return flask.abort(500)
                 
     return flask.make_response(response, response_code)
 
 
 @APP.post("/api/dirs/remove")
-@APP.post('/remove-dir')
 def dir_deletions():
-    global database
+    database = g.db
 
     if not request.is_json:
         return NOT_JSON_ERROR()
@@ -896,7 +945,9 @@ def dir_deletions():
     data = request.json
     headers = request.headers
 
-    verify_result = _verify(headers, _api_permission_type='delete')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='delete')
+    
     if verify_result != 0:
         return verify_result
             
@@ -949,15 +1000,14 @@ def dir_deletions():
                 "[/remove-dir]: remove_dir function returned unexpected data: '%s'",
                 result
             )
-            return SERVER_ERROR()
+            return flask.abort(500)
 
     return flask.make_response(response, response_code)
 
 
 @APP.post("/api/dirs/list")
-@APP.post('/list-dir')
 def dir_listing():
-    global database
+    database = g.db
 
     if not request.is_json:
         return NOT_JSON_ERROR()
@@ -965,7 +1015,9 @@ def dir_listing():
     data = request.json
     headers = request.headers
 
-    verify_result = _verify(headers, _api_permission_type='read')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='read')
+    
     if verify_result != 0:
         return verify_result
             
@@ -1020,17 +1072,19 @@ def dir_listing():
                 "[/list-dir]: list_dir function returned unexpected data: '%s'",
                 result
             )
-            return SERVER_ERROR()
+            return flask.abort(500)
 
     return flask.make_response(flask.jsonify(response), response_code)
 
 
 @APP.get('/api/dirs/get-paths')
 def get_dir_paths():
-    global database
+    database = g.db
     headers = request.headers
 
-    verify_result = _verify(headers, _api_permission_type='read')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='read')
+    
     if verify_result != 0:
         return verify_result
             
@@ -1053,15 +1107,14 @@ def get_dir_paths():
                 "[/api/dirs/get-paths]: dirs.get_dir_paths returned unexpected data: '%s'",
                 result
             )
-            return SERVER_ERROR()
+            return flask.abort(500)
     
     return flask.make_response(response, response_code)
 
 
 @APP.post("/api/create-key")
-@APP.post('/api/keys/create')
 def create_api_key():
-    global database
+    database = g.db
 
     if not request.is_json:
         return NOT_JSON_ERROR()
@@ -1069,7 +1122,9 @@ def create_api_key():
     data = request.json
     headers = request.headers
     
-    verify_result = _verify(headers, _api_permission_type='create')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='create')
+    
     if verify_result != 0:
         return verify_result
             
@@ -1154,21 +1209,23 @@ def create_api_key():
                 "[/api/create-key]: api_keys.create_key returned unexpected data: '%s'",
                 result
             )
-            return SERVER_ERROR()
+            return flask.abort(500)
             
     return flask.make_response(response, response_code)
 
 
 @APP.post('/api/keys/delete')
-@APP.post('/api/delete-key')
 def delete_api_key():
+    database = g.db
     if not request.is_json:
         return NOT_JSON_ERROR()
             
     data = request.json
     headers = request.headers
 
-    verify_result = _verify(headers, _api_permission_type='delete')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='delete')
+    
     if verify_result != 0:
         return verify_result
             
@@ -1206,19 +1263,21 @@ def delete_api_key():
                 "[/api/delete-key]: api_keys.delete_key returned unexpected data: '%s'",
                 result
             )
-            return SERVER_ERROR()
+            return flask.abort(500)
 
     return flask.make_response(response, response_code)
 
 
 @APP.post('/api/keys/list-all')
-@APP.post('/api/list-keys')
 def list_api_keys():
+    database = g.db
+
     if not request.is_json:
         return NOT_JSON_ERROR()
     
     headers = request.headers
-    verify_result = _verify(headers, _api_permission_type='read')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='read')
 
     if verify_result != 0:
         return verify_result
@@ -1242,20 +1301,23 @@ def list_api_keys():
                 "[/api/list-keys]: api_keys.list_keys returned unexpected data: '%s'",
                 result
             )
-            return SERVER_ERROR()
+            return flask.abort(500)
             
     return flask.make_response(response, response_code)
 
 
 @APP.post('/api/keys/get-data')
 def get_key_perms():
+    database = g.db
     if not request.is_json:
         return NOT_JSON_ERROR()
     
     headers = request.headers
     data = request.json
 
-    verify_result = _verify(headers, _api_permission_type='all')
+    with APP.app_context():
+        verify_result = _verify(headers, _api_permission_type='all')
+    
     if verify_result != 0:
         return verify_result
     
@@ -1315,7 +1377,7 @@ def get_key_perms():
                 "[/api/keys/get-data]: api_keys.%s_get_data returned unexpected data: '%s'",
                 f"{'apikey' if api_key else 'keyname'}", result
             )
-            return SERVER_ERROR()
+            return flask.abort(500)
     
     key_owner: str = database.api_keys.get_key_owner(api_key)
     if api_key and key_owner != username:
@@ -1343,29 +1405,8 @@ def api_route():
     return flask.jsonify({'alive': True})
 
 
-def config_app(provided_db: FileDatabase = None) -> flask.Flask:
-    global database
-    if not isinstance(provided_db, FileDatabase):
-        raise TypeError("Provided database is not an instance of _db.FileDatabase")
-    
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='[%(asctime)s] - [%(levelname)s] - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('app.log')
-        ]
-    )
-    return APP
-
-
 if __name__ == '__main__':
-    db_password: str = getpass.getpass(
-        "Enter database password [or empty if not protected]: ")
-    database: FileDatabase = FileDatabase(db_password=db_password)
-
-    _app: flask.Flask = config_app(database)
+    _app: flask.Flask = create_app()
     flask_route_port: int = int(os.environ.get('SYNCSERVER_PORT', 8561))
-
+    
     _app.run(debug=False, port=flask_route_port)

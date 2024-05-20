@@ -1,26 +1,31 @@
-## Patch recursive cursor use and implement transaction manager
+## Improve server script to work with production WSGI servers
 
 **Additions:**
 
+**`server/_server.py`**:
+
+* Added `create_app` function, initializes the app by creating the `FileDatabase` object and storing it in app config,
+then returns the global app for WSGI servers.
+* Added `teardown_app` to shut down the server and close database. Runs on exit.
+* Added error code 500 handler to return a JSON server error object instead of HTML.
+* Added a before request handler to get the app database and store in flask's `g` object.
+
 **`server/_db.py`**:
 
-* Add `transaction` context manager function to start a transaction and return a cursor, and close it when done.
-* Added experimental `dict_cache` switch to `FileDatabase`, allowing you to cache user information in memory in a dictionary.
-* Added `journal_mode=WAL` and `synchronous=FULL` pragma when initializing `FileDatabase`.
-* Added `key_recover` to `DatabaseAdmin` as a way to recover the original encryption key.
-* Added `update_encryption` to `DatabaseAdmin`, which updates file data for all uploaded files using the key provided.
-    If a new key is not provided, it will simply decrypt the files using the old key.
+* Added method `close` to clean up the database and mark it as closed.
 
 **Changes:**
 
-**`server/_db.py`**:
+**`server/_server.py`**:
 
-* Updated database version to 1.2.0. (Schema may still change between commits)
-* Moved `set_protection` and `save_conf` to `DatabaseAdmin`, initialized by `FileDatabase`.
-* Centralized `_get_userid` and `_get_dirid` to reduce boilerplate code and allow an easy way to change behaviour.
-* Update `--set-protection` option to include an entry for the recovery key path.
-* Remove `self.cursor` to prevent further recursive cursor use.
+* `_verify` now raises a `RuntimeError` when using this without an app context.
+* All `SERVER_ERROR()` calls have been replaced with `flask.abort(500)`.
+* Removed old routes, now all routes use the `/api` path.
+* Removed global database object in favor of flask's `g` to improve compatibility with WSGI servers.
+
+**`server/__main__.py`**:
+
+* Imports `create_app` from `_server` instead of doing app init.
 
 **Other:**
-* Make sure the server is down before running `update_encryption`, as the server might still be using the old encryption key.
-* Planning to make the server script use flask's `g` object for the database.
+* Will release version 1.3.0 after testing.
