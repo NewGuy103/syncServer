@@ -719,7 +719,7 @@ class DeletedFilesDialog(QDialog):
         
         for file_path, file_versions in self.deleted_paths.items():
             if not file_versions:
-                logger.info(
+                logger.debug(
                     "(DeletedFilesDialog.initUI): Skipped remote path '%s', "
                     "no deleted file versions available", file_path
                 )
@@ -1127,7 +1127,7 @@ class APIKeyManagerDialog(QDialog):
         self.layout.update()
         for key_name in key_names:
             if key_name in self.key_names:
-                logger.info(
+                logger.debug(
                     "(APIKeyManagerDialog.update_list): Skipped key '%s', already exists in layout",
                     key_name
                 )
@@ -1662,8 +1662,12 @@ class MainApp(QMainWindow):
         return 0
 
 
-if __name__ == '__main__':
+def run_gui():
     import sys
     app = QApplication(sys.argv)
-    login = StartLogin()
+    login = StartLogin()  # type: ignore
     sys.exit(app.exec_())
+
+
+if __name__ == '__main__':
+    run_gui()

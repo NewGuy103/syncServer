@@ -30,7 +30,11 @@ def create_app():
     if not db_password:
         db_password: str = getpass.getpass("Enter database password [or empty if not protected]: ")
     
-    file_db: FileDatabase = FileDatabase(db_password=db_password)
+    use_cache: str = os.environ.get("SYNCSERVER_CACHE_ENABLED", '')
+    file_db: FileDatabase = FileDatabase(
+        db_password=db_password, 
+        dict_cache=bool(use_cache)
+    )
     with APP.app_context():
         APP.config['SYNCSERVER-DATABASE'] = file_db
 
@@ -1405,8 +1409,12 @@ def api_route():
     return flask.jsonify({'alive': True})
 
 
-if __name__ == '__main__':
+def run_simple():
     _app: flask.Flask = create_app()
     flask_route_port: int = int(os.environ.get('SYNCSERVER_PORT', 8561))
     
     _app.run(debug=False, port=flask_route_port)
+
+
+if __name__ == '__main__':
+    run_simple()

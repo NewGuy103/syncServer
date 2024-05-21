@@ -8,7 +8,7 @@ from datetime import datetime
 __version__: str = "1.2.0"
 
 logger: logging.Logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 formatter: logging.Formatter = logging.Formatter(
     '[syncServer-interface]: [%(asctime)s] - [%(levelname)s] - %(message)s', 

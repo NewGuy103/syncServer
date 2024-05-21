@@ -1,4 +1,4 @@
-from ._server import create_app
+from ._server import run_simple
 
 if __name__ == '__main__':
-    create_app()
+    run_simple()
