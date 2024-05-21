@@ -26,7 +26,7 @@ from datetime import datetime
 from typing import BinaryIO, Generator, Literal, TextIO
 from contextlib import contextmanager
 
-__version__: str = "1.2.0"
+__version__: str = "1.3.0"
 LOGFILE: str = 'syncServer-serverDB.log'
 
 

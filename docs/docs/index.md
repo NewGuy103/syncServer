@@ -4,7 +4,7 @@
 
 Note from me: This is just a hobby project, and not supposed to be a production application. It's just a way to improve my skills and have something to work on.
 
-Current latest version: 1.2.0
+Current latest version: 1.3.0
 
 ```python
 >>> from syncserver.client import ServerInterface
@@ -24,6 +24,7 @@ pip install newguy103-syncserver
 
 ## Modules
 
-- [Client Module](client-interface)
-- [Server Database](server-db)
-- [Server API](api-overview)
+- [Client Module](client-interface.md)
+- [Client GUI](gui-interface.md)
+- [Server Database](server-db.md)
+- [Server API](api-overview.md)

@@ -5,7 +5,7 @@ import requests
 from typing import Literal
 from datetime import datetime
 
-__version__: str = "1.2.0"
+__version__: str = "1.3.0"
 
 logger: logging.Logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

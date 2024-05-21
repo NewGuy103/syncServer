@@ -3,7 +3,7 @@ site_author: NewGuy103
 copyright: "© NewGuy103, 2024. Licensed under the GNU General Public License v3.0."
 repo_url: https://github.com/newguy103/syncserver
 repo_name: GitHub
-edit_uri: blob/main/docs
+edit_uri: blob/main/docs/docs
 theme:
   name: readthedocs
   highlightjs: true
@@ -23,5 +23,6 @@ markdown_extensions:
 nav:
   - Home: 'index.md'
   - 'Client Module': 'client-interface.md'
+  - 'Client GUI': 'gui-interface.md'
   - 'Server API': 'api-overview.md'
   - 'Server Database': 'server-db.md'

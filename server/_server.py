@@ -14,7 +14,7 @@ from flask import Flask, request, g
 # from ._db import FileDatabase 
 from _db import FileDatabase  # use the above import once making setup.py
 
-__version__: str = "1.2.0"
+__version__: str = "1.3.0"
 APP: flask.Flask = Flask(__name__)
 
 

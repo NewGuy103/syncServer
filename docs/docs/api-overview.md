@@ -12,6 +12,29 @@ http://localhost:$SYNCSERVER_PORT
 
 All the endpoints only accept JSON (except for `/api/files/upload` and `/api/files/modify`).
 
+## Running the script
+
+---
+
+The script can be called using the `syncserver-server` entry point, or by using a WSGI app
+to call `syncserver.server.create_app`.
+
+### Environment variables
+
+---
+
+The server can also be controlled using environment variables.
+
+**SYNCSERVER_PORT**:
+  This controls the port that the server uses when running it without a production WSGI app.
+
+**SYNCSERVER_DBPASSWORD**:
+  This is the database password if the database is protected. If blank, the server prompts for the password.
+
+**SYNCSERVER_CACHE_ENABLED**:
+  This controls if the database will use a dict to cache user information. Only checks if the value
+  is present and is nont empty.
+
 ## Authentication
 
 ---
@@ -32,6 +55,9 @@ Failing to authenticate or providing invalid credentials will result in these re
 
 - **APIKEY_NOT_AUTHORIZED:**
   The API key you passed doesn't have the permission required to access this endpoint.
+
+- **EXPIRED_APIKEY:**
+  The API key has already expired.
 
 - **INVALID_CREDENTIALS:**
   Your username or password is incorrect.

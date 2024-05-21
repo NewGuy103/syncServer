@@ -1,7 +1,6 @@
 # Server Database Documentation
 
 ## Overview
-
 ---
 
 The `syncserver.server` database uses `sqlite3` by default.
@@ -9,14 +8,13 @@ The `syncserver.server` database uses `sqlite3` by default.
 There is also a command line interface to interact with the configurations of the database.
 
 ## Command line interface
-
 ---
 
 ```bash
 usage: syncserver.server-db [-h] [--database-path [db-path]] [--database-protected] [--recover-key] [--edit-vars] [--edit-config]
                             [--set-protection] [--add-user] [--remove-user]
 
-Command line tool to manage the syncServer database locally. Current application version: 1.2.0
+Command line tool to manage the syncServer database locally. Current application version: 1.3.0
 
 options:
   -h, --help            show this help message and exit
@@ -37,10 +35,9 @@ options:
 *if the database had an encryption key before.*
 
 ## SimpleCipher
-
 ---
 
-*New in version 1.2.1.*
+*New in version 1.3.0.*
 
 This is a simple class that allows to encrypt/decrypt using AES-GCM-256 and PBKDF2HMAC.
 This was created to remove the dependency on `newguy103-pycrypter`.
@@ -70,7 +67,6 @@ cipher = SimpleCipher(b"cipher_password")
     or if the peppers are not bytes.
 
 ### `encrypt`
-
 ---
 
 **Parameters:**
@@ -90,7 +86,6 @@ This function is a simple abstraction to encrypt data. When encryption is comple
 to the returned value as `salt + nonce + encrypted_data`.
 
 ### `decrypt`
-
 ---
 
 **Parameters:**
@@ -110,7 +105,6 @@ to the returned value as `salt + nonce + encrypted_data`.
 This function is a simple abstraction to decrypt data. It slices the bytes to get the salt and nonce.
 
 ### `hash_data`
-
 ---
 
 **Parameters:**
@@ -124,7 +118,6 @@ This function is a simple abstraction to decrypt data. It slices the bytes to ge
 This function is a simple abstraction to `hashes.Hash()`. It allows simple hashing of a string or small set of data.
 
 ## FileDatabase
-
 ---
 
 A class representing a file database with user authentication, file storage, and encryption capabilities.
@@ -146,8 +139,10 @@ file_db = FileDatabase(db_password=None)
 - **db_path** ([_str_](https://docs.python.org/3/library/functions.html#str)) - The path to the `sqlite3` database. 
     Defaults to `$XDG_DATA_HOME/syncServer-server/<version>/syncServer.db`.
 - **db_password** ([_bytes_](https://docs.python.org/3/library/functions.html#bytes) | [_str_](https://docs.python.org/3/library/functions.html#str)) - The encryption password used to protect the database.
-- **recovery_mode**  ([_bool_](https://docs.python.org/3/library/functions.html#bool)) - Flag to only partially initialize
+- **recovery_mode** ([_bool_](https://docs.python.org/3/library/functions.html#bool)) - Flag to only partially initialize
     the database to access the configuration variables.
+- **dict_cache** ([_bool_](https://docs.python.org/3/library/functions.html#bool)) - Flag to enable experimental
+    caching of user information (user IDs, username and hashed password).
 
 **Raises:** 
 
@@ -159,33 +154,13 @@ file_db = FileDatabase(db_password=None)
     - Provided a database password but the database was not protected.
     - Decrypting the database fails due to the wrong key.
 
-### `set_protection` 
-
+### `close`
 ---
 
-**Parameters:**
-
-- **set_protection** ([_bool_](https://docs.python.org/3/library/functions.html#bool)) - Whether to enable/disable database protection.
-- **cipher_key** ([_bytes_](https://docs.python.org/3/library/functions.html#bytes) | [_str_](https://docs.python.org/3/library/functions.html#str)) - The password to use for data encryption/decryption.
-
-This writes to the database's config table, and modifies `config_vars` to reflect the state of the database. When database protection is set to `True`, then `config_secrets` is encrypted and the application will encrypt all data being stored at rest, and decrypt data when required.
-
-If database protection is set to `False`, then the database will not encrypt any more data at rest. This will not decrypt existing data,
-and will cause the database to fail decryption on some data if it was encrypted.
-
-### `save_conf`
-
-**Parameters:**
-
-- **secrets** ([_dict_](https://docs.python.org/3/library/stdtypes.html#dict)) - The dictionary with the updated
-    config secrets.
-- **_vars** ([_dict_](https://docs.python.org/3/library/stdtypes.html#dict)) - The dictionary with the updated
-    config vars.
-
-This function simply saves the updated configuration secrets/variables, and is mainly used by the command line interface.
+Close the database and clean up the class. This closes the database connection, then deletes the relevant methods of the database.
+This also causes any calls to methods in this class to raise a `RuntimeError` stating that they are working on a closed instance.
 
 ### `verify_user`
-
 ---
 
 **Parameters:**
@@ -202,7 +177,6 @@ This function simply saves the updated configuration secrets/variables, and is m
 This verifies the hash of the user with their password.
 
 ### `add_user` 
-
 ---
 
 **Parameters:**
@@ -223,7 +197,6 @@ This verifies the hash of the user with their password.
 This function will create a new user account with the provided username and token, and create the root directory for the user.
 
 ### `remove_user` 
-
 ---
 
 **Parameters:**
@@ -238,7 +211,6 @@ This function will create a new user account with the provided username and toke
 This will permanently delete the user and all their existing data (files, API keys, etc).
 
 ### `dir_checker` 
-
 ---
 
 **Parameters:**
@@ -260,7 +232,6 @@ This will permanently delete the user and all their existing data (files, API ke
 This checks the provided file path and sees if the underlying directory exists. (A Unix path-like)
 
 ### `add_file`
-
 ---
 
 **Parameters:**
@@ -286,7 +257,6 @@ This checks the provided file path and sees if the underlying directory exists. 
 This adds a file into the database by reading the file stream in chunks. If encryption is enabled, then the data will be encrypted first before being stored in the database. This uses `sqlite3`'s concat (`||`) operator for chunk writing.
 
 ### `modify_file`
-
 ---
 
 **Parameters:**
@@ -312,7 +282,6 @@ This adds a file into the database by reading the file stream in chunks. If encr
 This modifies an existing file in the database by reading the file stream in chunks. If encryption is enabled, then the data will be encrypted first before being stored in the database. This uses `sqlite3`'s concat (`||`) operator for chunk writing.
 
 ### `remove_file`
-
 ---
 
 **Parameters:**
@@ -339,7 +308,6 @@ file, and can be restored.
 Or this will remove a file permanently by removing it from the database entirely.
 
 ### `read_file`
-
 ---
 
 **Parameters:**
@@ -366,8 +334,124 @@ there is a chunk size stored inside the database when the file was last uploaded
 
 This ensures that the database can read the file and decrypt it properly.
 
-## DirectoryInterface
+## DatabaseAdmin
+---
 
+Interface class that allows to manage the underlying database and configuration.
+
+Logs from this class has this signature: 
+`[syncServer-serverDB: DatabaseAdmin]: [%(asctime)s] - [%(levelname)s] - (%(funcName)s): %(message)s`,
+and is wrote to the log file defined as the constant `LOGFILE`.
+
+**This class is designed to be initialized by `FileDatabase` only.**
+
+```python
+db_admin = file_db.db_admin
+db_admin.set_protection(b'myKey', '~/recovery-key.key')
+```
+
+### `set_protection`
+---
+
+**Parameters:**
+
+- **cipher_key** ([_bytes_](https://docs.python.org/3/library/functions.html#bytes) | [_str_](https://docs.python.org/3/library/functions.html#str)) - The password to use for data encryption/decryption.
+- **recovery_key_path** ([_str_](https://docs.python.org/3/library/functions.html#str)) - The recovery key path.
+
+**Returns:**
+
+- `0` - If setting the encryption key succeeds.
+- `1` - If writing the recovery key fails.
+- `2` - If any sqlite errors happen while writing to the database.
+
+**Raises:**
+
+- [**FileExistsError**](https://docs.python.org/3/library/exceptions.html#FileExistsError) - If the recovery key
+    file exists, and cipher key is not empty.
+- [**TypeError**](https://docs.python.org/3/library/exceptions.html#TypeError) - If `cipher_key` is not bytes or str,
+    or if `recovery_key_path` is not a string.
+- [**RuntimeError**](https://docs.python.org/3/library/exceptions.html#RuntimeError) - If this is called in recovery mode.
+- [**ValueError**](https://docs.python.org/3/library/exceptions.html#ValueError) -  If recovery key path is empty and
+    cipher key is not empty.
+
+This will first copy the current configuration settings.
+
+When disabling encryption, the script will set `use_encryption` in conf secrets and `syncServer-protected` to False,
+and write it to the database.
+
+When enabling encryption/changing the key, the script will set `use_encryption` in conf secrets,
+`syncServer-protected` and `syncServer-encryptionEnabled` to True, create a 32 byte long hex which acts
+as the recovery key.
+
+The file by default has read/write permissions for owner, and no permissions for world/group. The script will then 
+encrypt the configuration settings, then store it in the database. 
+
+If an exception happens when disabling encryption, the transaction will rollback, and log an exception.
+
+If an exception happens when writing the recovery key to a file, then it will simply stop, and log an exception.
+But if it fails to write to the database, then the transaction will rollback, then it will delete the recovery key file,
+and log an exception.
+
+### `update_encryption`
+---
+
+**Parameters:**
+
+- `old_key` ([_bytes_](https://docs.python.org/3/library/functions.html#bytes) | [_str_](https://docs.python.org/3/library/functions.html#str))
+    - The old encryption key. Used to decrypt existing files.
+- `new_key` ([_bytes_](https://docs.python.org/3/library/functions.html#bytes) | [_str_](https://docs.python.org/3/library/functions.html#str))
+    - The new encryption key. Used to encryot existing files.
+
+**Returns:**
+
+- `0` - If the key update succeeds.
+
+**Raises:**
+
+- [**TypeError**](https://docs.python.org/3/library/exceptions.html#TypeError) - If the old or new encryption key
+    is not bytes or string.
+- [**RuntimeError**](https://docs.python.org/3/library/exceptions.html#RuntimeError) - If this is called in recovery mode.
+
+This will get all the available files, copy it into a temporary file (which is still stored on the database),
+clear the original file contents, decrypt the contents with the old key if available, encrypt the contents
+with the new key if available.
+
+The output is then stored in the original file, the temporary file is deleted then the database is vacuumed.
+
+### `key_recovery`
+---
+
+**Parameters:**
+
+- **recovery_key** ([_bytes_](https://docs.python.org/3/library/functions.html#bytes) | [_str_](https://docs.python.org/3/library/functions.html#str)) - The exported recovery key.
+
+**Returns:**
+
+- *password* - The original password used for encryption.
+- `1`  If decryption using the recovery key fails.
+
+**Raises:**
+
+- [**ValueError**](https://docs.python.org/3/library/exceptions.html#ValueError) - If `syncServer-recoveryKey` could not
+    be found in the config vars.
+- [**TypeError**](https://docs.python.org/3/library/exceptions.html#TypeError) - If `recovery_key` is not bytes or str.
+
+This will simply get the original encrypted password stored in the database, and attempt to decrypt it using the
+exported recovery key.
+
+### `save_conf`
+---
+
+**Parameters:**
+
+- **_secrets** ([_dict_](https://docs.python.org/3/library/stdtypes.html#dict)) - The dictionary with the updated
+    config secrets.
+- **_vars** ([_dict_](https://docs.python.org/3/library/stdtypes.html#dict)) - The dictionary with the updated
+    config vars.
+
+This function simply saves the updated configuration secrets/variables, and is mainly used by the command line interface.
+
+## DirectoryInterface
 ---
 
 Interface class allowing `FileDatabase` to access directory methods.
@@ -380,7 +464,6 @@ dirs.make_dir("username", "/dir-path")
 ```
 
 ### `make_dir`
-
 ---
 
 **Parameters:**
@@ -398,7 +481,7 @@ dirs.make_dir("username", "/dir-path")
 
 **Raises:**
 
-- [**TypeError**](https://docs.python.org/3/library/exceptions.html#TypeError) -  If 'dir_path' is not a strnig.
+- [**TypeError**](https://docs.python.org/3/library/exceptions.html#TypeError) -  If 'dir_path' is not a string.
 
 This creates a directory with the specified name and path for the user. The directories are not stored within the
 underlying file system, but instead within the `sqlite3` database.
@@ -409,7 +492,6 @@ The paths are similar to a Unix path: (`/dir/file.txt`)
 **from the top level directory.**
 
 ### `remove_dir`
-
 ---
 
 **Parameters:**
@@ -435,7 +517,6 @@ This will remove a directory and all the files within it. Attempting to remove t
 **This will also permanently delete the directory and not mark it as deleted.**
 
 ### `list_dir`
-
 ---
 
 **Parameters:**
@@ -461,7 +542,6 @@ This will list a directory and show all the files within it.
 **Since version 1.1.0, this does not list the sub-directories, as these are isolated.**
 
 ### `get_dir_paths`
-
 ---
 
 **Parameters:**
@@ -477,7 +557,6 @@ This will list a directory and show all the files within it.
 This will show all the directory paths that the user has created.
 
 ## DeletedFiles
-
 ---
 
 Interface class allowing `FileDatabase` to access deleted files.
@@ -490,7 +569,6 @@ deleted_files.restore_file("username", "/file-path", restore_which=0)
 ```
 
 ### `list_deleted`
-
 ---
 
 **Parameters:**
@@ -517,7 +595,6 @@ If the `file_path` is `:all:`, then it will return a dictionary containing all t
 the deleted timestamps as the value for that deleted file path.
 
 ### `restore_file`
-
 ---
 
 *Implicit restore removed in 1.2.0*
@@ -549,7 +626,6 @@ restore that file. But if it finds more than one file, then it is required to se
 The order of deleted files is latest -> oldest, and can be retrieved with `DeletedFiles.list_deleted`.
 
 ### `true_delete`
-
 ---
 
 **Parameters:**
@@ -579,7 +655,6 @@ delete that file. But if it finds more than one file, then it is required to set
 The order of deleted files is latest -> oldest, and can be retrieved with `DeletedFiles.list_deleted`.
 
 ## APIKeyInterface
-
 ---
 
 Interface class allowing `FileDatabase` to access API keys. The API keys are hashed before
@@ -595,7 +670,6 @@ api_keys.create_key("username", ['create'], 'key-name', '2024-01-01 0:00:00')
 ```
 
 ### `get_key_owner`
-
 ---
 
 **Parameters:**
@@ -615,7 +689,6 @@ This will get the username of the owner of the API key. If the database is exter
 exist but will not have a matching user ID. A warning will be logged and `INVALID_APIKEY` will be returned.
 
 ### `verify_key`
-
 ---
 
 **Parameters:**
@@ -639,7 +712,6 @@ exist but will not have a matching user ID. A warning will be logged and `INVALI
 This will check the API key and check if it has the provided permission.
 
 ### `create_key`
-
 ---
 
 **Parameters:**
@@ -671,7 +743,6 @@ key before storing. This will ensure that the API key is viewable only once.
 The function will explicitly disallow creating an API key with the permission `all`, this is used internally by the server script.
 
 ### `delete_key`
-
 ---
 
 **Parameters:**
@@ -691,7 +762,6 @@ The function will explicitly disallow creating an API key with the permission `a
 This will delete the API key with the name provided.
 
 ### `list_keys`
-
 ---
 
 **Parameters:**
@@ -712,7 +782,6 @@ This will **not** list the raw API keys, but only the key names. The server does
 API key after it is created, only the hashed version of it.
 
 ### `apikey_get_data`
-
 ---
 
 **Parameters:**
@@ -731,7 +800,6 @@ API key after it is created, only the hashed version of it.
 This function retrives the data from a raw API key. It retrieves the key permissions and expiry date.
 
 ### `keyname_get_data`
-
 ---
 
 **Parameters:**
@@ -752,7 +820,6 @@ This function retrives the data from a raw API key. It retrieves the key permiss
 This function retrives the data from an API key that belongs to a user. It retrieves the key permissions and expiry date.
 
 ### `check_expired`
-
 ---
 
 **Parameters:**
