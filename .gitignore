@@ -165,3 +165,6 @@ codeql*/
 codeql*/*
 *.db
 .debris/
+
+# Ignore local data directory
+syncserver/

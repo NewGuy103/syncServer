@@ -1,0 +1,8 @@
+aiofiles
+asyncpg
+sqlmodel
+pydantic-settings
+passlib[argon2]
+fastapi[standard]
+uvicorn[standard]
+cryptography
