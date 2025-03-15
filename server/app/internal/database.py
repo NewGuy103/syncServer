@@ -46,6 +46,11 @@ DEFAULT_CHUNK_SIZE: int = 10 * 1024 * 1024  # 10 MB
 
 
 class MainDatabase:
+    """Main database class used in the syncServer application.
+    
+    `override_engine()` is available for tests or to allow changing
+    the database engine before calling `async setup()`.
+    """
     def __init__(self, async_engine: 'AsyncEngine'):
         self.async_engine: 'AsyncEngine' = async_engine
     
@@ -53,6 +58,10 @@ class MainDatabase:
         self.async_engine: 'AsyncEngine' = async_engine
     
     async def setup(self):
+        """Sets up the database and runs first-run checks.
+        
+        This must be called first before using the child methods.
+        """
         async with self.async_engine.begin() as conn:
             # await conn.run_sync(SQLModel.metadata.drop_all)
             await conn.run_sync(SQLModel.metadata.create_all)
@@ -275,12 +284,52 @@ class FileMethods:
 
         self.deleted_files = DeletedFileMethods(parent)
 
+    def file_lock(self, file_path: Path):
+        """Get a file lock from Valkey.
+        
+        This is defined to allow different implementations of locks
+        that aren't strictly Valkey.
+
+        e.g. Using a local asyncio lock or a custom 
+        `async wait` lock.
+        """
+
+        lock = v.lock(str(file_path), blocking=True)
+        return lock
+    
+    async def check_for_parent_rename(self, file_path: Path) -> Path | None:
+        """
+        Checks Valkey for the `renamelog:{file_path.parent}` entry.
+        
+        Prevents a race condition where:
+        - File is being uploaded assuming a long upload time.
+        - Parent folder is renamed during that upload.
+        - File finishes uploading to a temp file, but still references the old parent.
+
+        It renames the old parent into the new parent and then returns the changed path.
+        """
+
+        # Valkey returns bytes, this did not have to take 3 days to debug
+        changed_parent: bytes = await v.get(f"renamelog:{file_path.parent}")
+        if changed_parent and not file_path.parent.exists():
+            decoded_bytes: str = changed_parent.decode('utf-8')
+            renamed_parent = Path(decoded_bytes)
+
+            logger.debug(
+                "Hit a race condition! Parent does not match: '%s' != '%s'",
+                renamed_parent, file_path
+            )
+            file_path = file_path.parent.with_name(renamed_parent.name) / file_path.name
+            return file_path
+        
+        return None
+    
     async def save_file(
         self, session: AsyncSession, username: str, 
         file_path: Path, 
         file_stream: 'UploadFile',
         chunk_size: int = DEFAULT_CHUNK_SIZE
-    ) -> bool | str:
+    ) -> bool:
         if file_path.exists():
             raise ValueError(f"file at path '{file_path}' exists")
 
@@ -288,7 +337,7 @@ class FileMethods:
         tmp_filename = f"create-{username}-{random_hex}.part"
 
         temp_path: Path = (data_directories.temp_files / tmp_filename).resolve()
-        lock = v.lock(str(file_path), blocking=True)
+        lock = self.file_lock(file_path)
 
         try:
             async with aiofiles.open(temp_path, 'xb') as os_file:
@@ -320,10 +369,15 @@ class FileMethods:
 
             raise ValueError("Unexpected incomplete write")
 
-        async with lock:
+        folder_lock = self.parent.folders.folder_lock(str(file_path.parent))
+        async with lock, folder_lock:
             user: Users | None = await self.parent.get_user(session, username)
             if not user:
                 raise ValueError(f"username {username} is invalid")
+            
+            changed_filepath = await self.check_for_parent_rename(file_path)
+            if changed_filepath:
+                file_path = changed_filepath
             
             folder: Folders = await self.parent.folders.get_folder(session, username, file_path.parent)
             if not folder:
@@ -353,7 +407,6 @@ class FileMethods:
         temp_path.rename(file_path)
 
         logger.debug("Renamed tempfile '%s' to '%s'", temp_path, file_path)
-
         return True
     
     async def update_file(
@@ -361,7 +414,7 @@ class FileMethods:
         file_path: Path, 
         file_stream: 'UploadFile',
         chunk_size: int = DEFAULT_CHUNK_SIZE
-    ):
+    ) -> bool:
         if not file_path.exists() or file_path.is_dir():
             raise ValueError(f"no file at path '{file_path}' exists")
 
@@ -388,7 +441,7 @@ class FileMethods:
         # Double check if file exists without a database entry
         result.one()
 
-        lock = v.lock(str(file_path), blocking=True)
+        lock = self.file_lock(file_path)
         try:
             async with aiofiles.open(temp_path, 'xb') as os_file:
                 chunk: bytes = await file_stream.read(chunk_size)
@@ -410,26 +463,36 @@ class FileMethods:
             )
             raise  # logging...
 
-        async with lock:
+        folder_lock = self.parent.folders.folder_lock(file_path.parent)
+        async with lock, folder_lock:
+            changed_filepath = await self.check_for_parent_rename(file_path)
+            if changed_filepath:
+                file_path = changed_filepath
+            
             temp_path.rename(file_path)
         
         return True
     
-    async def delete_file(self, session: AsyncSession, username: str, file_path: Path):
+    async def delete_file(self, session: AsyncSession, username: str, file_path: Path) -> bool:
         if not file_path.exists() or file_path.is_dir():
             raise ValueError(f"no file at path '{file_path}' exists")
 
-        lock = v.lock(str(file_path), blocking=True)
+        lock = self.file_lock(file_path)
         delete_id: uuid.UUID = uuid.uuid4()
 
         tmp_filename = f"{delete_id}"
         deleted_path: Path = (data_directories.trash_bin / tmp_filename).resolve()
 
+        folder_lock = self.parent.folders.folder_lock(file_path.parent)
         try:
-            async with lock:
+            async with lock, folder_lock:
                 user: Users = await self.parent.get_user(session, username)
                 if not user:
                     raise ValueError(f"username {username} is invalid")
+                
+                changed_filepath = await self.check_for_parent_rename(file_path)
+                if changed_filepath:
+                    file_path = changed_filepath
                 
                 folder: Folders = await self.parent.folders.get_folder(session, username, file_path.parent)
                 if not folder:
@@ -484,25 +547,41 @@ class FileMethods:
         saved_file: Files | None = result.one_or_none()
         return bool(saved_file)
   
-    async def rename_file(self, session: AsyncSession, username: str, file_path: Path, new_path: Path):
+    async def rename_file(
+        self, session: AsyncSession, 
+        username: str, 
+        file_path: Path, 
+        new_path: Path
+    ) -> bool:
         if not file_path.exists() or file_path.is_dir():
             raise ValueError(f"no file at path '{file_path}' exists")
         
         if new_path.exists() or new_path.is_dir():
             raise ValueError(f"existing file at path '{new_path}' exists")
 
-        lock_old = v.lock(str(file_path), blocking=True)
-        lock_new = v.lock(str(new_path), blocking=True)
+        lock_old = self.file_lock(file_path)
+        lock_new = self.file_lock(new_path)
 
+        # new_path should be the same parent as file_path, so only one folder lock
+        # this is going to come back for me wont it...
+        folder_lock = self.parent.folders.folder_lock(file_path.parent)
         try:
-            async with lock_old, lock_new:
+            async with lock_old, lock_new, folder_lock:
                 user: Users = await self.parent.get_user(session, username)
                 if not user:
                     raise ValueError(f"username {username} is invalid")
                 
+                old_changed_filepath = await self.check_for_parent_rename(file_path)
+                if old_changed_filepath:
+                    file_path = old_changed_filepath
+                
                 old_folder: Folders = await self.parent.folders.get_folder(session, username, file_path.parent)
                 if not old_folder:
                     raise ValueError(f"folder {file_path.parent} does not exist")
+                
+                new_changed_filepath = await self.check_for_parent_rename(new_path)
+                if new_changed_filepath:
+                    file_path = new_changed_filepath
                 
                 new_folder: Folders = await self.parent.folders.get_folder(session, username, new_path.parent)
                 if not new_folder:
@@ -531,25 +610,8 @@ class FileMethods:
 
         return True
 
-    async def read_file(self, session: AsyncSession, username: str, file_path: Path, chunk_size: int = 1):
-        if not file_path.exists() or file_path.is_dir():
-            raise ValueError(f"no file at path '{file_path}' exists")
 
-        user: Users | None = await self.parent.get_user(session, username)
-        if not user:
-            raise ValueError(f"username {username} is invalid")
-        
-        result = await session.exec(
-            select(Files).where(
-                Files.file_path == str(file_path),
-                Files.user_id == user.user_id,
-                Files.delete_entry == null()
-            )
-        )
-        result.one()
-        return True
-
-
+# TODO: implement this
 class DeletedFileMethods:
     def __init__(self, parent: MainDatabase):
         self.parent = parent
@@ -717,6 +779,21 @@ class FolderMethods:
         self.parent = parent
         self.async_engine = parent.async_engine
 
+    def folder_lock(self, folder_path: Path):
+        """Get a folder lock from Valkey.
+        
+        This is defined to allow different implementations of locks
+        that aren't strictly Valkey.
+
+        e.g. Using a local asyncio lock or a custom 
+        `async wait` lock.
+        """
+
+        # TODO: Change to allow using a different type of
+        # async context manager lock
+        lock = v.lock(str(folder_path), blocking=True)
+        return lock
+    
     async def get_folder(self, session: AsyncSession, username: str, folder_path: Path):
         user: Users = await self.parent.get_user(session, username)    
         if not user:
@@ -728,9 +805,18 @@ class FolderMethods:
         ))
 
         folder: Folders | None = result.one_or_none()
+        logger.debug(
+            "Retrieved '%s' from database using path '%s'",
+            folder, folder_path
+        )
         return folder
 
-    async def create_folder(self, session: AsyncSession, username: str, folder_path: Path, root: bool = False):
+    async def create_folder(
+        self, session: AsyncSession, 
+        username: str, 
+        folder_path: Path, 
+        root: bool = False
+    ):
         if folder_path.exists() and not root:
             raise ValueError(f"folder at path '{folder_path}' exists")
 
@@ -750,25 +836,27 @@ class FolderMethods:
         if folder:
             raise ValueError("folder path exists")
         
-        if root:
-            folder_instance = Folders(
-                folder_path=str(folder_path),
-                user_id=user.user_id,
-                parent_id=None
-            )
-        else:
-            folder_instance = Folders(
-                folder_path=str(folder_path),
-                user_id=user.user_id,
-                parent_id=parent.folder_id
-            )
+        lock = self.folder_lock(folder_path)
+        async with lock:
+            if root:
+                folder_instance = Folders(
+                    folder_path=str(folder_path),
+                    user_id=user.user_id,
+                    parent_id=None
+                )
+            else:
+                folder_instance = Folders(
+                    folder_path=str(folder_path),
+                    user_id=user.user_id,
+                    parent_id=parent.folder_id
+                )
 
-        session.add(folder_instance)
-        await session.commit()
+            session.add(folder_instance)
+            await session.commit()
 
-        if not root:
-            folder_path.mkdir(mode=0o755, parents=False, exist_ok=False)
-    
+            if not root:
+                folder_path.mkdir(mode=0o755, parents=False, exist_ok=False)
+        
         return True
     
     async def check_folder_exists(self, session: AsyncSession, username: str, folder_path: Path):
@@ -787,7 +875,7 @@ class FolderMethods:
 
         return bool(folder)
     
-    async def list_folder_data(self, session: AsyncSession, username: str, folder_path: Path, root: bool = False):
+    async def list_folder_data(self, session: AsyncSession, username: str, folder_path: Path):
         if not folder_path.exists():
             raise ValueError(f"no folder at path '{folder_path}' exists")
 
@@ -808,6 +896,7 @@ class FolderMethods:
             pathlike = Path(file.file_path)
             files.append(pathlike.name)
         
+        await session.refresh(folder)
         for child_folder in folder.child_folders:
             pathlike = Path(child_folder.folder_path)
             folders.append(pathlike.name)
@@ -818,6 +907,65 @@ class FolderMethods:
             folders=folders
         )
         return folder_contents
+
+    async def remove_folder(self, session: AsyncSession, username: str, folder_path: Path) -> bool:
+        if not folder_path.exists():
+            raise ValueError(f"no folder at path '{folder_path}' exists")
+
+        user: Users = await self.parent.get_user(session, username)
+        if not user:
+            raise ValueError(f"user '{username}' does not exist")
+        
+        result = await session.exec(select(Folders).where(
+            Folders.user_id == user.user_id,
+            Folders.folder_path == str(folder_path)
+        ))
+        folder = result.one()
+
+        await session.delete(folder)
+        await session.commit()
+
+        return True
+
+    async def rename_folder(
+        self, session: AsyncSession, 
+        username: str,
+        folder_path: Path,
+        new_path: Path
+    ):
+        if not folder_path.exists():
+            raise ValueError(f"no folder at path '{folder_path}' exists")
+
+        user: Users = await self.parent.get_user(session, username)
+        if not user:
+            raise ValueError(f"user '{username}' does not exist")
+        
+        result = await session.exec(select(Folders).where(
+            Folders.user_id == user.user_id,
+            Folders.folder_path == str(folder_path)
+        ))
+        folder = result.one()
+
+        lock = self.folder_lock(folder_path)
+        async with lock:
+            folder.folder_path = str(new_path)
+            for file in folder.files:
+                file_path = Path(file.file_path)
+                renamed_filepath = file_path.parent.with_name(new_path.name) / file_path.name
+
+                file.file_path = str(renamed_filepath)
+                logger.debug("Renamed file '%s' to '%s' in folder '%s'", file_path, renamed_filepath, new_path)
+                session.add(file)
+            
+            session.add(folder)
+            await session.commit()
+
+            folder_path.rename(new_path)
+            await v.set(f"renamelog:{folder_path}", str(new_path), ex=3600)
+
+            logger.debug("Set cache renamelog:%s to '%s'", folder_path, new_path)
+
+        return True
 
 
 database: MainDatabase = MainDatabase(async_engine)

@@ -35,6 +35,6 @@ def convert_and_verify(path: Path, user_datadir: Path) -> Path:
         raise HTTPException(status_code=403, detail="Invalid file path")
 
     if not path.parent.exists():
-        raise HTTPException(status_code=400, detail="Parent folder does not exist")
+        raise HTTPException(status_code=400, detail="Parent folder not found")
 
     return path

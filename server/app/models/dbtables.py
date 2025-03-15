@@ -31,11 +31,27 @@ class UserBase(SQLModel):
 
 
 class Users(UserBase, table=True):
-    sessions: list['UserSessions'] = Relationship(back_populates='user', sa_relationship_kwargs={'lazy': 'selectin'})
-    api_keys: list['UserAPIKeys'] = Relationship(back_populates='user', sa_relationship_kwargs={'lazy': 'selectin'})
+    sessions: list['UserSessions'] = Relationship(
+        back_populates='user', 
+        sa_relationship_kwargs={'lazy': 'selectin'},
+        cascade_delete=True
+    )
+    api_keys: list['UserAPIKeys'] = Relationship(
+        back_populates='user', 
+        sa_relationship_kwargs={'lazy': 'selectin'},
+        cascade_delete=True
+    )
 
-    files: list['Files'] = Relationship(back_populates='user', sa_relationship_kwargs={'lazy': 'selectin'})
-    folders: list['Folders'] = Relationship(back_populates='user', sa_relationship_kwargs={'lazy': 'selectin'})
+    files: list['Files'] = Relationship(
+        back_populates='user', 
+        sa_relationship_kwargs={'lazy': 'selectin'},
+        cascade_delete=True
+    )
+    folders: list['Folders'] = Relationship(
+        back_populates='user', 
+        sa_relationship_kwargs={'lazy': 'selectin'},
+        cascade_delete=True
+    )
 
 
 class UserSessions(SQLModel, table=True):
@@ -49,7 +65,10 @@ class UserSessions(SQLModel, table=True):
     )
 
     user_id: uuid.UUID = Field(foreign_key='users.user_id', ondelete='CASCADE')
-    user: Users = Relationship(back_populates='sessions', sa_relationship_kwargs={'lazy': 'selectin'})
+    user: Users = Relationship(
+        back_populates='sessions', 
+        sa_relationship_kwargs={'lazy': 'selectin'}
+    )
 
 
 class UserAPIKeys(SQLModel, table=True):
@@ -63,10 +82,13 @@ class UserAPIKeys(SQLModel, table=True):
     key_name: str = Field(nullable=False, min_length=1)
 
     user_id: uuid.UUID = Field(foreign_key='users.user_id', ondelete='CASCADE')
-    user: Users = Relationship(back_populates='api_keys', sa_relationship_kwargs={'lazy': 'selectin'})
+    user: Users = Relationship(
+        back_populates='api_keys', 
+        sa_relationship_kwargs={'lazy': 'selectin'}
+    )
 
 
-# Self referential model (https://docs.sqlalchemy.org/en/20/orm/self_referential.html)
+# Self referential model (https://docs.sqlalchemy.org/en/latest/orm/self_referential.html)
 class Folders(SQLModel, table=True):
     folder_id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     folder_path: str = Field(min_length=1, nullable=False, index=True)
@@ -82,11 +104,16 @@ class Folders(SQLModel, table=True):
     )
     child_folders: list['Folders'] = Relationship(
         back_populates='parent_folder',
-        sa_relationship_kwargs={'lazy': 'selectin'}
+        sa_relationship_kwargs={'lazy': 'selectin'},
+        cascade_delete=True
     )
 
     user: Users = Relationship(back_populates='folders', sa_relationship_kwargs={'lazy': 'selectin'})
-    files: list['Files'] = Relationship(back_populates='folder', sa_relationship_kwargs={'lazy': 'selectin'})
+    files: list['Files'] = Relationship(
+        back_populates='folder', 
+        sa_relationship_kwargs={'lazy': 'selectin'},
+        cascade_delete=True
+    )
 
 
 class Files(SQLModel, table=True):
@@ -96,8 +123,15 @@ class Files(SQLModel, table=True):
     folder_id: uuid.UUID = Field(foreign_key='folders.folder_id', ondelete='CASCADE')
     user_id: uuid.UUID = Field(foreign_key='users.user_id', ondelete='CASCADE')
 
-    user: Users = Relationship(back_populates='files', sa_relationship_kwargs={'lazy': 'selectin'})
-    folder: Folders = Relationship(back_populates='files', sa_relationship_kwargs={'lazy': 'selectin'})
+    user: Users = Relationship(
+        back_populates='files', 
+        sa_relationship_kwargs={'lazy': 'selectin'}
+    )
+    folder: Folders = Relationship(
+        back_populates='files', 
+        sa_relationship_kwargs={'lazy': 'selectin'},
+    )
+
     delete_entry: Optional['DeletedFiles'] = Relationship(
         back_populates='file', 
         sa_relationship_kwargs={'lazy': 'selectin', 'uselist': False}
@@ -112,4 +146,7 @@ class DeletedFiles(SQLModel, table=True):
     )
 
     file_id: uuid.UUID = Field(foreign_key='files.file_id', ondelete='CASCADE')
-    file: Files = Relationship(back_populates='delete_entry', sa_relationship_kwargs={'lazy': 'selectin'})
+    file: Files = Relationship(
+        back_populates='delete_entry', 
+        sa_relationship_kwargs={'lazy': 'selectin'}
+    )

@@ -10,6 +10,7 @@ from ..deps import (
     LoggerDep, SessionDep, KeyNotAllowed
 )
 from ..models.auth import APIKeyCreate, APIKeyInfo, AccessTokenError, AccessTokenResponse, AccessTokenErrorCodes
+from ..models.common import UserInfo
 from ..internal.constants import DBReturnValues
 from ..internal.database import database
 
@@ -90,7 +91,7 @@ async def revoke_login_token(user: UserAuthDep, token: Annotated[str, Form()], s
 
 
 @router.get('/test_auth')
-async def auth_test(user: UserAuthDep, api_key: KeyPermRead) -> dict[str, str]:
+async def auth_test(user: UserAuthDep, api_key: KeyPermRead) -> UserInfo:
     return {'username': user.username, 'auth_type': user.auth_type}
 
 
