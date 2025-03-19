@@ -4,22 +4,21 @@ from typing import Annotated
 from fastapi import APIRouter, Body, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-
 from ..internal import ospaths
 from ..internal.database import database
+from ..models.common import GenericSuccess
 from ..deps import UserAuthDep, LoggerDep, SessionDep
 
 
-main_router = APIRouter(prefix='/files', tags=['File Management'])
-file_router = APIRouter(prefix='/file')
+router = APIRouter(prefix='/file')
 
 
-@file_router.post('/{file_path:path}')
+@router.post('/{file_path:path}')
 async def upload_file(
     file_path: str, file: UploadFile, 
     user: UserAuthDep, session: SessionDep,
     logger: LoggerDep
-):
+) -> GenericSuccess:
     if file.size is None:
         raise HTTPException(status_code=400, detail="Invalid file stream")
     
@@ -50,7 +49,7 @@ async def upload_file(
     return {'success': True}
 
 
-@file_router.get('/{file_path:path}')
+@router.get('/{file_path:path}')
 async def retrieve_file(file_path: str, user: UserAuthDep, logger: LoggerDep, session: SessionDep):
     user_datadir: Path = ospaths.get_user_datadir(user.username)
     unsanitized_path: Path = user_datadir / file_path
@@ -72,14 +71,15 @@ async def retrieve_file(file_path: str, user: UserAuthDep, logger: LoggerDep, se
         return FileResponse(os_filepath, filename=file_path)
     
     # Don't reach this point...
+    logger.error("Hit unreachable point in code, file_exists: %s", file_exists)
     raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
-@file_router.put('/{file_path:path}')
+@router.put('/{file_path:path}')
 async def update_file(
     file_path: str, file: UploadFile, user: UserAuthDep, 
     session: SessionDep, logger: LoggerDep
-):
+) -> GenericSuccess:
     if file.size is None:
         raise HTTPException(status_code=400, detail="Invalid file stream")
     
@@ -110,11 +110,11 @@ async def update_file(
     return {'success': True}
 
 
-@file_router.delete('/{file_path:path}')
+@router.delete('/{file_path:path}')
 async def delete_file(
     file_path: str, user: UserAuthDep, 
     session: SessionDep, logger: LoggerDep
-):
+) -> GenericSuccess:
     user_datadir: Path = ospaths.get_user_datadir(user.username)
     unsanitized_path: Path = user_datadir / file_path
 
@@ -142,11 +142,11 @@ async def delete_file(
     return {'success': True}
 
 
-@file_router.patch('/{file_path:path}')
+@router.patch('/{file_path:path}')
 async def rename_file(
     file_path: str, new_name: Annotated[str, Body(embed=True)], 
     user: UserAuthDep, session: SessionDep, logger: LoggerDep
-):
+) -> GenericSuccess:
     user_datadir: Path = ospaths.get_user_datadir(user.username)
     unsanitized_path: Path = user_datadir / file_path
 

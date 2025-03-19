@@ -1,40 +1,58 @@
-# Many changes and additions
+# Implement deleted files and bug fixes
 
 **Version**: v0.1.0
 
-**Date:** 15/03/2025
+**Date:** 19/03/2025
 
 ## Additions
 
+**`/app/internal/constants.py`**:
+
+* Added `OFFSET_INVALID` return code.
+
 **`/app/internal/database.py`**:
 
-* Added `file_lock()` and `folder_lock()` to file and folder to allow returning a different type of lock.
-* Added `check_for_parent_rename()` to check the Valkey cache for an renames that happened
-  while waiting for a file upload to complete.
-* Added `remove_folder()` and `rename_folder()`.
+* Implemented deleted files as `DeletedFiles`, accessible through `database.files.deleted_files`.
+* Added `FileMethods.lookup_database_for_file()` which is used by `DeletedFileMethods`.
+* Added logic to rename child folders when renaming a folder.
 
-**`/tests/routers/test_folders.py`**:
+**`/app/models/common.py`**:
+
+* Created `GenericSuccess` as a simple response model.
+
+**`/app/models/files.py`**:
+
+* Created this file for any models relating to the `/files` router.
+
+**`/tests/conftest.py`**:
+
+* Added hook to order test in a custom order instead of A-Z.
+
+**`/tests/routers/test_deletedfiles.py`**:
 
 * Added folder route tests.
 
-**`/app/routers/folders.py`**:
-
-* Added database calls to sync both the filesystem and the database.
-
 ## Changes
+
+**`/app/internal/database.py`**:
+
+* Lock methods now prefix themselves as `filelock/folderlock/deletelock:`.
+* Removed `DeletedFileMethods.check_file_deleted()`
+* Getting folder contents now properly show the full path starting from `/` instead of just the name.
 
 **`/app/models/dbtables.py`**:
 
 * Now has `cascade_delete=True` for the one-to-many relationships.
 
-**`/tests/conftest.py`**:
+**`/routers/files.py`**:
 
-* Fix `conftest.py` not having fixtures due to my backup program causing a conflict.
+* Main router has been moved to `/routers/main.py`.
 
-**`/app/internal/database.py`**:
+**`/tests/routers/folders.py`**:
 
-* File operations (excluding read) now acquire a lock on their parent folder during database operations.
+* Getter tests now check content with a `/` and using `in` instead of direct comparison.
 
 ## Misc
 
 * Will remove old `_db.py` and `_server.py` once rewrite is complete.
+* Most routers now return `GenericSuccess` (`{"success": true}`).

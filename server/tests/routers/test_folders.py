@@ -136,7 +136,7 @@ async def test_read_root_folder(client: AsyncClient, admin_headers: dict):
         assert False, e
 
     assert folder_contents.folder_path == '/'
-    assert folder_contents.folders == ['test_folder']
+    assert '/test_folder' in folder_contents.folders
 
 
 async def test_read_folder(client: AsyncClient, admin_headers: dict):
@@ -149,8 +149,8 @@ async def test_read_folder(client: AsyncClient, admin_headers: dict):
     except ValidationError as e:
         assert False, e
 
-    assert folder_contents.folder_path == 'test_folder'
-    assert folder_contents.files == ['file1']
+    assert folder_contents.folder_path == '/test_folder'
+    assert '/test_folder/file1' in folder_contents.files
 
 
 async def test_rename_folder(

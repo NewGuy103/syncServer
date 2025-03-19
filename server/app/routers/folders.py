@@ -9,6 +9,7 @@ from ..internal.database import database
 
 from ..deps import UserAuthDep, SessionDep, LoggerDep
 from ..models.folders import FolderContents
+from ..models.common import GenericSuccess
 
 # TODO: Find a way to turn parent checks into a reusable function
 router = APIRouter(prefix='/folders', tags=['Folder Management'])
@@ -26,7 +27,10 @@ async def list_root_folder_contents(user: UserAuthDep, session: SessionDep) -> F
 
 
 @router.post('/{folder_path:path}')
-async def create_folder(folder_path: str, user: UserAuthDep, session: SessionDep, logger: LoggerDep):
+async def create_folder(
+    folder_path: str, user: UserAuthDep, 
+    session: SessionDep, logger: LoggerDep
+) -> GenericSuccess:
     user_datadir = ospaths.get_user_datadir(user.username)
     unsanitized_path: Path = user_datadir / folder_path
 
@@ -85,7 +89,10 @@ async def list_folder_contents(
 
 
 @router.delete('/{folder_path:path}')
-async def remove_folder(folder_path: str, user: UserAuthDep, session: SessionDep, logger: LoggerDep):
+async def remove_folder(
+    folder_path: str, user: UserAuthDep, 
+    session: SessionDep, logger: LoggerDep
+) -> GenericSuccess:
     user_datadir = ospaths.get_user_datadir(user.username)
     unsanitized_path: Path = user_datadir / folder_path
 
@@ -119,7 +126,7 @@ async def rename_folder(
     user: UserAuthDep,
     session: SessionDep,
     logger: LoggerDep
-):
+) -> GenericSuccess:
     user_datadir = ospaths.get_user_datadir(user.username)
     unsanitized_path: Path = user_datadir / folder_path
 

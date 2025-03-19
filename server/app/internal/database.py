@@ -10,7 +10,7 @@ import aiofiles.os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlmodel import SQLModel, null, select
+from sqlmodel import SQLModel, delete, desc, null, select, distinct
 from sqlalchemy.pool import AsyncAdaptedQueuePool
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -18,12 +18,13 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from cryptography.hazmat.primitives import hashes
 
 from .config import settings, data_directories
-from .constants import DBReturnValues, FileReturnValues
+from .constants import DBReturnValues
 from .cache import v
 
 from ..models.common import UserInfo
 from ..models.auth import APIKeyInfo
 from ..models.users import UserPublicGet
+from ..models.files import DeletedFilesGet
 from ..models.folders import FolderContents
 from ..models.pwdcontext import pwd_context
 from ..models.dbtables import DeletedFiles, Files, Folders, UserAPIKeys, UserSessions, Users
@@ -282,7 +283,7 @@ class FileMethods:
         self.parent = parent
         self.async_engine = parent.async_engine
 
-        self.deleted_files = DeletedFileMethods(parent)
+        self.deleted_files = DeletedFileMethods(parent, self)
 
     def file_lock(self, file_path: Path):
         """Get a file lock from Valkey.
@@ -294,9 +295,39 @@ class FileMethods:
         `async wait` lock.
         """
 
-        lock = v.lock(str(file_path), blocking=True)
+        filelock_name = f"filelock:{str(file_path)}"
+        lock = v.lock(filelock_name, blocking=True)
         return lock
     
+    async def lookup_database_for_file(self, session: AsyncSession, username: str, file_path: Path):
+        """Look for any file matching the path in the database.
+        
+        It also looks for files with a delete entry, as this only checks
+        if the file is there or not. 
+        
+        This does not look for the file in the filesystem.
+        """
+        user: Users | None = await self.parent.get_user(session, username)
+        if not user:
+            raise ValueError(f"username {username} is invalid")
+        
+        folder: Folders = await self.parent.folders.get_folder(session, username, file_path.parent)
+        if not folder:
+            raise ValueError(f"folder {file_path.parent} does not exist")
+        
+        result = await session.exec(
+            select(Files).where(
+                Files.file_path == str(file_path),
+                Files.user_id == user.user_id
+            )
+        )
+
+        files = result.all()
+        if files:
+            return True
+        
+        return False
+        
     async def check_for_parent_rename(self, file_path: Path) -> Path | None:
         """
         Checks Valkey for the `renamelog:{file_path.parent}` entry.
@@ -323,6 +354,30 @@ class FileMethods:
             return file_path
         
         return None
+    
+    async def check_file_exists(self, session: AsyncSession, username: str, file_path: Path) -> bool:
+        if not file_path.exists() or file_path.is_dir():
+            logger.warning("File path %s does not exist or is a directory", file_path)
+            return False
+
+        user: Users | None = await self.parent.get_user(session, username)
+        if not user:
+            raise ValueError(f"username {username} is invalid")
+        
+        folder: Folders = await self.parent.folders.get_folder(session, username, file_path.parent)
+        if not folder:
+            raise ValueError(f"folder {file_path.parent} does not exist")
+        
+        result = await session.exec(
+            select(Files).where(
+                Files.file_path == str(file_path),
+                Files.user_id == user.user_id,
+                Files.delete_entry == null()
+            )
+        )
+
+        saved_file: Files | None = result.one_or_none()
+        return bool(saved_file)
     
     async def save_file(
         self, session: AsyncSession, username: str, 
@@ -523,29 +578,6 @@ class FileMethods:
             raise
 
         return True
-        
-    async def check_file_exists(self, session: AsyncSession, username: str, file_path: Path) -> bool:
-        if not file_path.exists() or file_path.is_dir():
-            return False
-
-        user: Users | None = await self.parent.get_user(session, username)
-        if not user:
-            raise ValueError(f"username {username} is invalid")
-        
-        folder: Folders = await self.parent.folders.get_folder(session, username, file_path.parent)
-        if not folder:
-            raise ValueError(f"folder {file_path.parent} does not exist")
-        
-        result = await session.exec(
-            select(Files).where(
-                Files.file_path == str(file_path),
-                Files.user_id == user.user_id,
-                Files.delete_entry == null()
-            )
-        )
-
-        saved_file: Files | None = result.one_or_none()
-        return bool(saved_file)
   
     async def rename_file(
         self, session: AsyncSession, 
@@ -611,38 +643,293 @@ class FileMethods:
         return True
 
 
-# TODO: implement this
 class DeletedFileMethods:
-    def __init__(self, parent: MainDatabase):
+    def __init__(self, maindb: MainDatabase, parent: FileMethods):
         self.parent = parent
-        self.async_engine = parent.async_engine
+        self.check_for_parent_rename = parent.check_for_parent_rename
 
-    async def check_file_deleted(self, session: AsyncSession, username: str, file_path: Path):
-        if not file_path.exists() or file_path.is_dir():
-            raise ValueError(f"no file at path '{file_path}' exists")
+        self.maindb = maindb
+        self.async_engine = maindb.async_engine
 
-        user: Users | None = await self.parent.get_user(session, username)
+    def delete_lock(self, file_path: Path):
+        """Get a delete lock from Valkey.
+        
+        This is defined to allow different implementations of locks
+        that aren't strictly Valkey.
+
+        e.g. Using a local asyncio lock or a custom 
+        `async wait` lock.
+        """
+
+        deletelock_name = f"deletelock:{str(file_path)}"
+        lock = v.lock(deletelock_name, blocking=True)
+        return lock
+    
+    async def lookup_deleted_exists(self, session: AsyncSession, username: str, file_path: Path):
+        user: Users | None = await self.maindb.get_user(session, username)
         if not user:
             raise ValueError(f"username {username} is invalid")
         
         result = await session.exec(
             select(Files).where(
                 Files.file_path == str(file_path),
-                Files.user_id == user.user_id
+                Files.user_id == user.user_id,
+                Files.delete_entry != null()
             )
         )
         file_models = result.all()
-        if not file_models:
-            return FileReturnValues.NO_FILE_EXISTS
+        if file_models:
+            return True
         
-        for model in file_models:
-            if model.delete_entry:
-                continue
+        return False
 
-            return False
+    async def show_deleted_versions(
+        self, session: AsyncSession, 
+        username: str, file_path: Path,
+        amount: int = 100
+    ) -> list[DeletedFilesGet]:
+        user: Users | None = await self.maindb.get_user(session, username)
+        if not user:
+            raise ValueError(f"username {username} is invalid")
+        
+        changed_filepath = await self.check_for_parent_rename(file_path)
+        if changed_filepath:
+            file_path = changed_filepath
+        
+        folder: Folders = await self.maindb.folders.get_folder(session, username, file_path.parent)
+        if not folder:
+            raise ValueError(f"folder {file_path.parent} does not exist")
+        
+        # .order_by(desc(DeletedFiles.deleted_on)).limit(amount)
+        result = await session.exec(
+            select(Files, DeletedFiles)
+            .join(DeletedFiles)
+            .where(
+                Files.file_path == str(file_path),
+                Files.user_id == user.user_id,
+                Files.delete_entry != null(),
+            ).order_by(desc(DeletedFiles.deleted_on)).limit(amount)
+        )
+
+        delete_data: list = []
+        
+        for file, deleted_file in result.all():
+            logger.debug("Retrieved from deleted files: [%s, %s]", file, deleted_file)
+
+            deleted_file_public: DeletedFilesGet = DeletedFilesGet(deleted_on=deleted_file.deleted_on)
+            delete_data.append(deleted_file_public)
+        
+        return delete_data
+
+    async def show_files_with_deletes(
+        self, session: AsyncSession, 
+        username: str
+    ) -> list[str]:
+        user: Users | None = await self.maindb.get_user(session, username)
+        if not user:
+            raise ValueError(f"username {username} is invalid")
+        
+        result = await session.exec(
+            select(distinct(Files.file_path))
+            .join(DeletedFiles)
+            .where(
+                Files.user_id == user.user_id,
+                Files.delete_entry != null(),
+            )
+        )
+
+        user_datadir = data_directories.user_data / username
+        delete_list: list[str] = []
+
+        for db_file_path in result.all():
+            os_filepath: Path = Path(db_file_path)
+            new_path = '/' + str(os_filepath.relative_to(user_datadir))
+
+            delete_list.append(new_path)
+        
+        return delete_list
+    
+    async def delete_version(
+        self, session: AsyncSession, 
+        username: str, file_path: Path,
+        offset: int = 0
+    ):
+        user: Users | None = await self.maindb.get_user(session, username)
+        if not user:
+            raise ValueError(f"username {username} is invalid")
+        
+        changed_filepath = await self.check_for_parent_rename(file_path)
+        if changed_filepath:
+            file_path = changed_filepath
+        
+        folder: Folders = await self.maindb.folders.get_folder(session, username, file_path.parent)
+        if not folder:
+            raise ValueError(f"folder {file_path.parent} does not exist")
+        
+        file_deleted = await self.lookup_deleted_exists(session, username, file_path)
+        if not file_deleted:
+            raise ValueError(f"file {file_path} has no delete entry")
+        
+        delete_lock = self.delete_lock(str(file_path))
+        async with delete_lock:
+            result = await session.exec(
+                select(Files, DeletedFiles)
+                .join(DeletedFiles)
+                .where(
+                    Files.file_path == str(file_path),
+                    Files.user_id == user.user_id,
+                    Files.delete_entry != null(),
+                ).order_by(desc(DeletedFiles.deleted_on)).offset(offset).limit(1)
+            )
+            results = result.one_or_none()
+
+            # Assume out of bounds
+            if not results:
+                logger.debug("Offset %d out of bounds, database returned None", offset)
+                return DBReturnValues.OFFSET_INVALID
             
+            file, deleted_file = results
+
+            await session.delete(deleted_file)
+            await session.delete(file)
+
+            await session.commit()
+
+        file_path = data_directories.trash_bin / str(deleted_file.delete_id)
+        await aiofiles.os.unlink(file_path)
+
         return True
+
+    async def delete_all_versions(
+        self, session: AsyncSession, 
+        username: str, file_path: Path
+    ):
+        user: Users | None = await self.maindb.get_user(session, username)
+        if not user:
+            raise ValueError(f"username {username} is invalid")
+        
+        changed_filepath = await self.check_for_parent_rename(file_path)
+        if changed_filepath:
+            file_path = changed_filepath
+        
+        folder: Folders = await self.maindb.folders.get_folder(session, username, file_path.parent)
+        if not folder:
+            raise ValueError(f"folder {file_path.parent} does not exist")
+        
+        file_deleted = await self.lookup_deleted_exists(session, username, file_path)
+        if not file_deleted:
+            raise ValueError(f"file {file_path} has no delete entry")
+        
+        delete_lock = self.delete_lock(str(file_path))
+        async with delete_lock:
+            result = await session.exec(
+                select(DeletedFiles.delete_id)
+                .join(Files)
+                .where(
+                    Files.file_path == str(file_path),
+                    Files.user_id == user.user_id,
+                    Files.delete_entry != null(),
+                )
+            )
+            stmt = delete(Files).where(
+                Files.file_path == str(file_path),
+                Files.user_id == user.user_id,
+                Files.delete_entry != null()
+            )
+
+            logger.debug("Executing DELETE: %s", stmt)
+            await session.exec(stmt)
+
+            await session.commit()
+        
+        for delete_id in result.all():
+            deleted_path = data_directories.trash_bin / str(delete_id)
+            await aiofiles.os.unlink(deleted_path)
+        
+        return True
+    
+    async def empty_trashbin(self, session: AsyncSession, username: str):
+        user: Users | None = await self.maindb.get_user(session, username)
+        if not user:
+            raise ValueError(f"username {username} is invalid")
+        
+        # Using distinct to prevent duplicate delete_all_versions calls
+        result = await session.exec(
+            select(distinct(Files.file_path))
+            .where(
+                Files.user_id == user.user_id,
+                Files.delete_entry != null(),
+            )
+        )
+
+        for file_path in result.all():
+            path = Path(file_path)
+            await self.delete_all_versions(session, username, path)
+        
+        return True
+        
+    async def restore_version(
+        self, session: AsyncSession, 
+        username: str, file_path: Path,
+        offset: int = 0
+    ):
+        user: Users | None = await self.maindb.get_user(session, username)
+        if not user:
+            raise ValueError(f"username {username} is invalid")
+        
+        changed_filepath = await self.check_for_parent_rename(file_path)
+        if changed_filepath:
+            file_path = changed_filepath
+        
+        folder: Folders = await self.maindb.folders.get_folder(session, username, file_path.parent)
+        if not folder:
+            raise ValueError(f"folder {file_path.parent} does not exist")
+        
+        file_deleted = await self.lookup_deleted_exists(session, username, file_path)
+        if not file_deleted:
+            raise ValueError(f"file {file_path} has no delete entry")
+        
+        file_exists = await self.parent.check_file_exists(session, username, file_path)
+        if file_exists:
+            raise ValueError(f"file {file_path} has a non-deleted version")
+        
+        file_lock = self.parent.file_lock(file_path)
+        folder_lock = self.maindb.folders.folder_lock(file_path.parent)
+        delete_lock = self.delete_lock(str(file_path))
+        
+        async with file_lock, folder_lock, delete_lock:
+            result = await session.exec(
+                select(Files, DeletedFiles)
+                .join(DeletedFiles)
+                .where(
+                    Files.file_path == str(file_path),
+                    Files.user_id == user.user_id,
+                    Files.delete_entry != null(),
+                ).order_by(desc(DeletedFiles.deleted_on)).offset(offset).limit(1)
+            )
+            results = result.one_or_none()
+
+            # Assume out of bounds
+            if not results:
+                logger.debug("Offset %d out of bounds, database returned None", offset)
+                return DBReturnValues.OFFSET_INVALID
+
+            file, deleted_file = results
+
+            changed_filepath = await self.check_for_parent_rename(file_path)
+            if changed_filepath:
+                file_path = changed_filepath
             
+            deleted_path = data_directories.trash_bin / str(deleted_file.delete_id)
+
+            await session.delete(deleted_file)
+            logger.debug("Restored delete version %s as file %s", deleted_path, file_path)
+
+            await session.commit()
+            await aiofiles.os.rename(deleted_path, file_path)
+
+        return True
+
 
 class APIKeyMethods:
     def __init__(self, parent: MainDatabase):
@@ -789,9 +1076,8 @@ class FolderMethods:
         `async wait` lock.
         """
 
-        # TODO: Change to allow using a different type of
-        # async context manager lock
-        lock = v.lock(str(folder_path), blocking=True)
+        folderlock = f"folderlock:{str(folder_path)}"
+        lock = v.lock(folderlock, blocking=True)
         return lock
     
     async def get_folder(self, session: AsyncSession, username: str, folder_path: Path):
@@ -892,17 +1178,27 @@ class FolderMethods:
         files: list[str] = []
         folders: list[str] = []
         
+        user_datadir = data_directories.user_data / username
         for file in folder.files:
-            pathlike = Path(file.file_path)
-            files.append(pathlike.name)
+            if file.delete_entry:
+                logger.debug("Skip including deleted file entry '%s'", file.file_id)
+                continue
+
+            os_filepath: Path = Path(file.file_path)
+            new_path = '/' + str(os_filepath.relative_to(user_datadir))
+
+            files.append(new_path)
         
         await session.refresh(folder)
         for child_folder in folder.child_folders:
-            pathlike = Path(child_folder.folder_path)
-            folders.append(pathlike.name)
+            os_folderpath: Path = Path(child_folder.folder_path)
+            new_path = '/' + str(os_folderpath.relative_to(user_datadir))
+
+            folders.append(new_path)
         
+        displayed_path = '/' + str(folder_path.relative_to(user_datadir))
         folder_contents = FolderContents(
-            folder_path=folder_path.name,
+            folder_path=displayed_path,
             files=files,
             folders=folders
         )
@@ -948,7 +1244,6 @@ class FolderMethods:
 
         lock = self.folder_lock(folder_path)
         async with lock:
-            folder.folder_path = str(new_path)
             for file in folder.files:
                 file_path = Path(file.file_path)
                 renamed_filepath = file_path.parent.with_name(new_path.name) / file_path.name
@@ -957,8 +1252,21 @@ class FolderMethods:
                 logger.debug("Renamed file '%s' to '%s' in folder '%s'", file_path, renamed_filepath, new_path)
                 session.add(file)
             
+            await session.refresh(folder)
+            for child_folder in folder.child_folders:
+                child_folderpath = Path(child_folder.folder_path)
+                renamed_folderpath = child_folderpath.parent.with_name(new_path.name) / child_folderpath.name
+
+                child_folder.folder_path = str(renamed_folderpath)
+                logger.debug("Renamed folder '%s' to '%s' in folder '%s'", child_folderpath, renamed_folderpath, new_path)
+
+                session.add(child_folder)
+            
+            folder.folder_path = str(new_path)
             session.add(folder)
+
             await session.commit()
+            logger.debug("Changed name of old folder %s to new folder %s", folder_path, new_path)
 
             folder_path.rename(new_path)
             await v.set(f"renamelog:{folder_path}", str(new_path), ex=3600)

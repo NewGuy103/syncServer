@@ -1,6 +1,7 @@
 import shutil
 import secrets
 import pytest
+import logging
 
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -15,6 +16,22 @@ from app.deps import get_session
 from app.models.common import UserInfo
 from app.internal.config import settings
 from app.internal.database import database
+
+
+
+def pytest_collection_modifyitems(session, config, items):
+    """Custom test sorting with debug logging"""
+
+    order = {
+        "test_main.py": 1,
+        "test_auth.py": 2,
+        "test_files.py": 3,
+        "test_folders.py": 4,
+        "test_deletedfiles.py": 100,  # Ensure last
+    }
+
+    # Sort based on filename
+    items.sort(key=lambda item: order.get(Path(item.path).name, 50))
 
 
 @pytest.fixture(scope='session')
@@ -38,7 +55,10 @@ async def override_database():
 
 
 @pytest.fixture(scope='session', autouse=True)
-async def cleanup_datadirs():
+async def setup_and_cleanup():
+    logger = logging.getLogger('syncserver')
+    logger.setLevel(logging.DEBUG)
+
     yield
 
     test_datadir = Path('test_syncserver').resolve()

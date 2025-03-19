@@ -10,7 +10,7 @@ from ..deps import (
     LoggerDep, SessionDep, KeyNotAllowed
 )
 from ..models.auth import APIKeyCreate, APIKeyInfo, AccessTokenError, AccessTokenResponse, AccessTokenErrorCodes
-from ..models.common import UserInfo
+from ..models.common import UserInfo, GenericSuccess
 from ..internal.constants import DBReturnValues
 from ..internal.database import database
 
@@ -120,7 +120,7 @@ async def create_api_key(
 async def delete_api_key(
     user: UserAuthDep, api_key: KeyPermDelete,
     key_name: str, logger: LoggerDep, session: SessionDep
-) -> dict[str, bool]:
+) -> GenericSuccess:
     key_deleted: bool | str = await database.api_keys.delete_key(session, user.username, key_name)
     match key_deleted:
         case True:

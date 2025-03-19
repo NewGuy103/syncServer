@@ -142,7 +142,7 @@ class DeletedFiles(SQLModel, table=True):
     delete_id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     deleted_on: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
-        sa_column=Column(DateTime(timezone=True), index=True)
+        sa_column=Column(TZDateTime, index=True)
     )
 
     file_id: uuid.UUID = Field(foreign_key='files.file_id', ondelete='CASCADE')
