@@ -6,3 +6,4 @@ passlib[argon2]
 fastapi[standard]
 uvicorn[standard]
 cryptography
+valkey

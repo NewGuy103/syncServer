@@ -1,5 +1,3 @@
-import shutil
-
 from pathlib import Path
 from typing import Annotated
 from fastapi import APIRouter, HTTPException, Body
@@ -114,8 +112,6 @@ async def remove_folder(
         raise HTTPException(status_code=400, detail="Parent folder not found")
 
     await database.folders.remove_folder(session, user.username, os_folderpath)
-    shutil.rmtree(os_folderpath, ignore_errors=False)
-    
     return {'success': True}
 
 

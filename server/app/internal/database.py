@@ -1,5 +1,6 @@
 import asyncio
 import secrets
+import shutil
 import typing
 
 import logging
@@ -171,6 +172,8 @@ class UserMethods:
         await session.delete(user)
         await session.commit()
         
+        # TODO: Either make directory cleanup a background task 
+        # or run it directly here
         return True
 
     async def retrieve_user(self, session: AsyncSession, username: str) -> UserPublicGet:
@@ -235,7 +238,7 @@ class SessionMethods:
         user_session: UserSessions | None = result.one_or_none()
 
         if not user_session:
-            return DBReturnValues.INVALID_SESSION
+            raise ValueError("session token invalid")
 
         userinfo = UserInfo(
             username=user_session.user.username,
@@ -270,7 +273,7 @@ class SessionMethods:
         user_session: UserSessions | None = result.one_or_none()
 
         if not user_session:
-            raise ValueError(f'invalid session token: {token}')
+            raise ValueError('invalid session token')
         
         await session.delete(user_session)
         await session.commit()
@@ -396,6 +399,7 @@ class FileMethods:
 
         try:
             async with aiofiles.open(temp_path, 'xb') as os_file:
+                logger.debug("Created temp file %s for uploading", temp_path)
                 chunk: bytes = await file_stream.read(chunk_size)
                 await os_file.write(chunk)
 
@@ -419,7 +423,10 @@ class FileMethods:
         logger.debug("Wrote %d bytes to file %s", written_size, temp_path)
 
         if written_size != file_stream.size:
-            logger.warning("Expected to write %d bytes, only wrote %d bytes")
+            logger.warning(
+                "Expected to write %d bytes, only wrote %d bytes",
+                file_stream.size, written_size
+            )
             temp_path.unlink()
 
             raise ValueError("Unexpected incomplete write")
@@ -1140,8 +1147,7 @@ class FolderMethods:
             session.add(folder_instance)
             await session.commit()
 
-            if not root:
-                folder_path.mkdir(mode=0o755, parents=False, exist_ok=False)
+            folder_path.mkdir(mode=0o755, parents=False, exist_ok=True)
         
         return True
     
@@ -1221,6 +1227,7 @@ class FolderMethods:
         await session.delete(folder)
         await session.commit()
 
+        shutil.rmtree(folder_path, ignore_errors=False)
         return True
 
     async def rename_folder(
@@ -1252,7 +1259,6 @@ class FolderMethods:
                 logger.debug("Renamed file '%s' to '%s' in folder '%s'", file_path, renamed_filepath, new_path)
                 session.add(file)
             
-            await session.refresh(folder)
             for child_folder in folder.child_folders:
                 child_folderpath = Path(child_folder.folder_path)
                 renamed_folderpath = child_folderpath.parent.with_name(new_path.name) / child_folderpath.name

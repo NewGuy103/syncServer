@@ -18,20 +18,30 @@ from app.internal.config import settings
 from app.internal.database import database
 
 
-
 def pytest_collection_modifyitems(session, config, items):
-    """Custom test sorting with debug logging"""
-
-    order = {
-        "test_main.py": 1,
-        "test_auth.py": 2,
-        "test_files.py": 3,
-        "test_folders.py": 4,
-        "test_deletedfiles.py": 100,  # Ensure last
+    orders = {
+        "routers": {
+            "test_main.py": 1,
+            "test_auth.py": 2,
+            "test_files.py": 3,
+            "test_folders.py": 4,
+            "test_deletedfiles.py": 5
+        },
+        "database": {
+            "test_users_db.py": 6,
+            "test_session_db.py": 7,
+            "test_files_db.py": 8,
+            "test_folders_db.py": 9
+        },
     }
 
-    # Sort based on filename
-    items.sort(key=lambda item: order.get(Path(item.path).name, 50))
+    def get_order(item):
+        path = Path(item.path)
+        parent = path.parent.name
+        filename = path.name
+        return orders.get(parent, {}).get(filename, 50)
+
+    items.sort(key=get_order)
 
 
 @pytest.fixture(scope='session')

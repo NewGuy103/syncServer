@@ -1,58 +1,37 @@
-# Implement deleted files and bug fixes
+# Create tests for database and create Dockerfile
 
 **Version**: v0.1.0
 
-**Date:** 19/03/2025
+**Date:** 20/03/2025
 
 ## Additions
 
-**`/app/internal/constants.py`**:
+**`/docker/Dockerfile, /.dockerignore`**:
 
-* Added `OFFSET_INVALID` return code.
+* Created Dockerfile and .dockerignore to allow containerization.
 
-**`/app/internal/database.py`**:
+**`/requirements.in, /requirements.txt`**:
 
-* Implemented deleted files as `DeletedFiles`, accessible through `database.files.deleted_files`.
-* Added `FileMethods.lookup_database_for_file()` which is used by `DeletedFileMethods`.
-* Added logic to rename child folders when renaming a folder.
+* Updated requirements to include valkey.
 
-**`/app/models/common.py`**:
+**`/tests/database/`**:
 
-* Created `GenericSuccess` as a simple response model.
-
-**`/app/models/files.py`**:
-
-* Created this file for any models relating to the `/files` router.
-
-**`/tests/conftest.py`**:
-
-* Added hook to order test in a custom order instead of A-Z.
-
-**`/tests/routers/test_deletedfiles.py`**:
-
-* Added folder route tests.
+* Added tests to check if the database is working properly, and to see if it
+  works without FastAPI.
 
 ## Changes
 
 **`/app/internal/database.py`**:
 
-* Lock methods now prefix themselves as `filelock/folderlock/deletelock:`.
-* Removed `DeletedFileMethods.check_file_deleted()`
-* Getting folder contents now properly show the full path starting from `/` instead of just the name.
-
-**`/app/models/dbtables.py`**:
-
-* Now has `cascade_delete=True` for the one-to-many relationships.
-
-**`/routers/files.py`**:
-
-* Main router has been moved to `/routers/main.py`.
-
-**`/tests/routers/folders.py`**:
-
-* Getter tests now check content with a `/` and using `in` instead of direct comparison.
+* `FolderMethods.remove_folder()` now removes folder in the function call.
+* `SessionMethods.get_token_info()` and `revoke_session()` now raises an exception instead
+  of returning `INVALID_SESSION` on invalid tokens.
+* Made unexpected partial write log warning on `FileMethods.save_file()` properly log the values.
+* `FolderMethods.create_folder()` now creates the folder regardless to prevent a problem where
+  a user is created without a data directory on the host.
+* `FolderMethods.rename_folder()` no longer refreshes the folder object as it canceled changes
+  when renaming files inside it.
 
 ## Misc
 
 * Will remove old `_db.py` and `_server.py` once rewrite is complete.
-* Most routers now return `GenericSuccess` (`{"success": true}`).
