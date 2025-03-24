@@ -11,7 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.ext.asyncio import create_async_engine
 
 
-from app.main import app, app_lifespan
+from app.server.main import app, app_lifespan
 from app.deps import get_session
 from app.models.common import UserInfo
 from app.internal.config import settings

@@ -118,8 +118,8 @@ async def create_api_key(
 
 @router.delete('/api_keys/{key_name}')
 async def delete_api_key(
-    user: UserAuthDep, api_key: KeyPermDelete,
-    key_name: str, logger: LoggerDep, session: SessionDep
+    key_name: str, logger: LoggerDep, session: SessionDep,
+    user: UserAuthDep, api_key: KeyPermDelete
 ) -> GenericSuccess:
     key_deleted: bool | str = await database.api_keys.delete_key(session, user.username, key_name)
     match key_deleted:
@@ -141,3 +141,17 @@ async def list_api_keys(
 ) -> list[APIKeyInfo]:
     keys: list[APIKeyInfo] = await database.api_keys.list_keys(session, user.username)
     return keys
+
+
+@router.get('/api_keys/{key_name}')
+async def get_key_information(
+    key_name: str,
+    user: UserAuthDep, api_key: KeyPermRead,
+    logger: LoggerDep, session: SessionDep
+) -> APIKeyInfo:
+    key_data: APIKeyInfo | None = await database.api_keys.get_key_info(session, user.username, key_name)
+
+    if not key_data:
+        raise HTTPException(status_code=404, detail="API key not found")
+    
+    return key_data

@@ -7,7 +7,10 @@ from fastapi.responses import FileResponse
 from ..internal import ospaths
 from ..internal.database import database
 from ..models.common import GenericSuccess
-from ..deps import UserAuthDep, LoggerDep, SessionDep
+from ..deps import (
+    UserAuthDep, LoggerDep, SessionDep, KeyPermCreate,
+    KeyPermRead, KeyPermUpdate, KeyPermDelete
+)
 
 
 router = APIRouter(prefix='/file')
@@ -17,7 +20,7 @@ router = APIRouter(prefix='/file')
 async def upload_file(
     file_path: str, file: UploadFile, 
     user: UserAuthDep, session: SessionDep,
-    logger: LoggerDep
+    logger: LoggerDep, api_key: KeyPermCreate
 ) -> GenericSuccess:
     if file.size is None:
         raise HTTPException(status_code=400, detail="Invalid file stream")
@@ -50,7 +53,11 @@ async def upload_file(
 
 
 @router.get('/{file_path:path}')
-async def retrieve_file(file_path: str, user: UserAuthDep, logger: LoggerDep, session: SessionDep):
+async def retrieve_file(
+    file_path: str, user: UserAuthDep, 
+    logger: LoggerDep, session: SessionDep, 
+    api_key: KeyPermRead
+) -> FileResponse:
     user_datadir: Path = ospaths.get_user_datadir(user.username)
     unsanitized_path: Path = user_datadir / file_path
 
@@ -78,7 +85,7 @@ async def retrieve_file(file_path: str, user: UserAuthDep, logger: LoggerDep, se
 @router.put('/{file_path:path}')
 async def update_file(
     file_path: str, file: UploadFile, user: UserAuthDep, 
-    session: SessionDep, logger: LoggerDep
+    session: SessionDep, logger: LoggerDep, api_key: KeyPermUpdate
 ) -> GenericSuccess:
     if file.size is None:
         raise HTTPException(status_code=400, detail="Invalid file stream")
@@ -113,7 +120,7 @@ async def update_file(
 @router.delete('/{file_path:path}')
 async def delete_file(
     file_path: str, user: UserAuthDep, 
-    session: SessionDep, logger: LoggerDep
+    session: SessionDep, logger: LoggerDep, api_key: KeyPermDelete
 ) -> GenericSuccess:
     user_datadir: Path = ospaths.get_user_datadir(user.username)
     unsanitized_path: Path = user_datadir / file_path
@@ -145,7 +152,8 @@ async def delete_file(
 @router.patch('/{file_path:path}')
 async def rename_file(
     file_path: str, new_name: Annotated[str, Body(embed=True)], 
-    user: UserAuthDep, session: SessionDep, logger: LoggerDep
+    user: UserAuthDep, session: SessionDep, logger: LoggerDep,
+    api_key: KeyPermUpdate
 ) -> GenericSuccess:
     user_datadir: Path = ospaths.get_user_datadir(user.username)
     unsanitized_path: Path = user_datadir / file_path

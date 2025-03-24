@@ -5,7 +5,10 @@ from fastapi import APIRouter, HTTPException, Body
 from ..internal import ospaths
 from ..internal.database import database
 
-from ..deps import UserAuthDep, SessionDep, LoggerDep
+from ..deps import (
+    UserAuthDep, LoggerDep, SessionDep, KeyPermCreate,
+    KeyPermRead, KeyPermUpdate, KeyPermDelete
+)
 from ..models.folders import FolderContents
 from ..models.common import GenericSuccess
 
@@ -14,7 +17,10 @@ router = APIRouter(prefix='/folders', tags=['Folder Management'])
 
 
 @router.get('/')
-async def list_root_folder_contents(user: UserAuthDep, session: SessionDep) -> FolderContents:
+async def list_root_folder_contents(
+    user: UserAuthDep, session: SessionDep, 
+    api_key: KeyPermRead
+) -> FolderContents:
     # No convert and verify since the directory is not user provided
     user_datadir: Path = ospaths.get_user_datadir(user.username)
 
@@ -27,7 +33,8 @@ async def list_root_folder_contents(user: UserAuthDep, session: SessionDep) -> F
 @router.post('/{folder_path:path}')
 async def create_folder(
     folder_path: str, user: UserAuthDep, 
-    session: SessionDep, logger: LoggerDep
+    session: SessionDep, logger: LoggerDep,
+    api_key: KeyPermCreate
 ) -> GenericSuccess:
     user_datadir = ospaths.get_user_datadir(user.username)
     unsanitized_path: Path = user_datadir / folder_path
@@ -60,7 +67,8 @@ async def create_folder(
 @router.get('/{folder_path:path}')
 async def list_folder_contents(
     folder_path: str, user: UserAuthDep, 
-    session: SessionDep, logger: LoggerDep
+    session: SessionDep, logger: LoggerDep,
+    api_key: KeyPermRead
 ) -> FolderContents:
     user_datadir = ospaths.get_user_datadir(user.username)
     unsanitized_path: Path = user_datadir / folder_path
@@ -89,7 +97,8 @@ async def list_folder_contents(
 @router.delete('/{folder_path:path}')
 async def remove_folder(
     folder_path: str, user: UserAuthDep, 
-    session: SessionDep, logger: LoggerDep
+    session: SessionDep, logger: LoggerDep,
+    api_key: KeyPermDelete
 ) -> GenericSuccess:
     user_datadir = ospaths.get_user_datadir(user.username)
     unsanitized_path: Path = user_datadir / folder_path
@@ -120,8 +129,10 @@ async def rename_folder(
     folder_path: str, 
     new_name: Annotated[str, Body(embed=True)], 
     user: UserAuthDep,
+    
     session: SessionDep,
-    logger: LoggerDep
+    logger: LoggerDep,
+    api_key: KeyPermUpdate
 ) -> GenericSuccess:
     user_datadir = ospaths.get_user_datadir(user.username)
     unsanitized_path: Path = user_datadir / folder_path

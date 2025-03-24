@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 
 from fastapi import FastAPI 
 
-from .version import __version__
+from ..version import __version__
 from .internal.database import database
 from .internal.config import log_conf
 from .internal.ospaths import make_data_dirs

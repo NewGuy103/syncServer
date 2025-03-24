@@ -1,7 +1,10 @@
 from typing import Annotated
 from fastapi import APIRouter, HTTPException, Path
 
-from ..deps import IsAdminDep, LoggerDep, UserAuthDep, SessionDep
+from ..deps import (
+    UserAuthDep, LoggerDep, SessionDep, KeyPermCreate,
+    KeyPermRead, KeyPermDelete, IsAdminDep
+)
 from ..internal.constants import DBReturnValues
 from ..internal.database import database
 from ..models.users import UserPublicGet, UserCreate
@@ -11,7 +14,7 @@ router = APIRouter(prefix='/users', tags=['User Management'], dependencies=[IsAd
 
 
 @router.get('/')
-async def get_users(user: UserAuthDep, session: SessionDep) -> list[UserPublicGet]:
+async def get_users(user: UserAuthDep, session: SessionDep, api_key: KeyPermRead) -> list[UserPublicGet]:
     users = await database.users.retrieve_all_users(session)
     return users
 
@@ -19,7 +22,8 @@ async def get_users(user: UserAuthDep, session: SessionDep) -> list[UserPublicGe
 @router.post('/')
 async def create_user(
     data: UserCreate, user: UserAuthDep, 
-    session: SessionDep, logger: LoggerDep
+    session: SessionDep, logger: LoggerDep,
+    api_key: KeyPermCreate
 ) -> UserPublicGet:
     user_created: bool | str = await database.users.add_user(
         session, data.username, data.password
@@ -33,15 +37,19 @@ async def create_user(
             logger.error("Invalid data:", user_created)
             raise HTTPException(status_code=500, detail="Internal Server Error")
     
-    user_public: UserPublicGet = await database.users.retrieve_user(data.username)
+    user_public: UserPublicGet = await database.users.retrieve_user(session, data.username)
     return user_public
 
 
 @router.delete('/{username}')
 async def delete_user(
-    username: Annotated[str, Path(max_length=30)], user: UserAuthDep, 
+    username: Annotated[str, Path(max_length=30)], 
+    user: UserAuthDep, api_key: KeyPermDelete,
     session: SessionDep, logger: LoggerDep
 ) -> dict:
+    if username == user.username:
+        raise HTTPException(status_code=400, detail="Cannot delete own user")
+    
     user_deleted: bool | str = await database.users.delete_user(session, username)
     match user_deleted:
         case True:

@@ -1011,11 +1011,17 @@ class APIKeyMethods:
 
         key_data: UserAPIKeys | None = result.one_or_none()
         if not key_data:
+            logger.debug("Key not found: %s", api_key)
             return False
         
         if permission not in key_data.key_permissions and permission:
+            logger.debug("API key '%s' lacks permission '%s'", key_data.key_name, permission)
             return False
 
+        if datetime.now(timezone.utc) > key_data.expiry_date:
+            logger.debug("API key '%s' has expired", key_data.key_name)
+            return False
+        
         return True
 
     async def delete_key(self, session: AsyncSession, username: str, key_name: str) -> str:
@@ -1052,14 +1058,40 @@ class APIKeyMethods:
     
         key_list: list = []
         for key in key_data:
+            expired: bool = datetime.now(timezone.utc) > key.expiry_date
             key_info: APIKeyInfo = APIKeyInfo(
                 key_name=key.key_name, expiry_date=key.expiry_date,
-                key_permissions=key.key_permissions
+                key_permissions=key.key_permissions,
+                expired=expired
             )
             key_list.append(key_info)
             
         return key_list
 
+    async def get_key_info(self, session: AsyncSession, username: str, key_name: str) -> APIKeyInfo | None:
+        user: Users = await self.parent.get_user(session, username)
+        if not user:
+            raise ValueError(f"user '{username}' does not exist")
+        
+        result = await session.exec(
+            select(UserAPIKeys).where(
+                UserAPIKeys.user_id == user.user_id,
+                UserAPIKeys.key_name == key_name
+            )
+        )
+        key_data = result.one_or_none()
+
+        if not key_data:
+            return None
+    
+        expired: bool = datetime.now(timezone.utc) > key_data.expiry_date
+        key_info: APIKeyInfo = APIKeyInfo(
+            key_name=key_data.key_name, expiry_date=key_data.expiry_date,
+            key_permissions=key_data.key_permissions,
+            expired=expired
+        )
+        return key_info
+    
     async def get_user_info(self, session: AsyncSession, api_key: str):
         hashed_key: str = await asyncio.to_thread(self.hash_key, api_key)
         result = await session.exec(select(UserAPIKeys).where(UserAPIKeys.key_data == hashed_key))

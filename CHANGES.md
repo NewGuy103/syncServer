@@ -1,21 +1,28 @@
-# Separate CHANGES.md
+# Refactor project and merge client and server
 
 **Version**: v0.1.0
 
-**Date:** 15/03/2025
+**Date:** 24/03/2025
 
 ## Additions
 
-**`/server/CHANGES.md`**:
+**`/.python-version`**:
 
-* Created to track changes for the server app.
+* Added pin to Python version. Currently pinned to 3.12.
+
+**`/uv.lock`**:
+
+* Switched from `requirements.txt` to `uv.lock` (readthedocs will still use requirements.txt).
 
 ## Changes
 
-**`/docs`**:
+**`/pyproject.toml`**:
 
-* Removed most documentation to clean up and prepare to document the new app.
-* MkDocs now uses `mkdocs-material` theme.
+* Updated to add dependencies and metadata.
+
+**`docker/Dockerfile`**:
+
+* Updated to use `uv` instead of `pip`.
 
 ## Misc
 

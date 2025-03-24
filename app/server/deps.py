@@ -14,7 +14,15 @@ from .internal.config import settings
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/api/auth/token', auto_error=False)
-api_key_header = APIKeyHeader(name='X-API-Key', auto_error=False)
+api_key_header = APIKeyHeader(
+    name='X-API-Key', 
+    auto_error=False,
+    description=(
+        "An API key that starts with `syncserver-`.\n\n"
+        "Using an API key on `/token` or `/token/revoke` will throw a 403 Forbidden, "
+        "as an API key is not required or is not intended to be used in those routes."
+    )
+)
 
 
 InvalidCredentialsExc = HTTPException(

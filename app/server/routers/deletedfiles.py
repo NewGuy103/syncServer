@@ -3,7 +3,10 @@ from typing import Annotated
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import NonNegativeInt, PositiveInt
 
-from ..deps import LoggerDep, SessionDep, UserAuthDep
+from ..deps import (
+    UserAuthDep, LoggerDep, SessionDep,
+    KeyPermRead, KeyPermUpdate, KeyPermDelete
+)
 from ..internal import ospaths
 from ..internal.database import database
 from ..internal.constants import DBReturnValues
@@ -15,7 +18,10 @@ router = APIRouter(prefix='/deleted')
 
 
 @router.get('/')
-async def retrieve_files_with_deletes(session: SessionDep, user: UserAuthDep) -> list[str]:
+async def retrieve_files_with_deletes(
+    session: SessionDep, user: UserAuthDep,
+    api_key: KeyPermRead
+) -> list[str]:
     res = await database.files.deleted_files.show_files_with_deletes(
         session, user.username
     )
@@ -26,6 +32,8 @@ async def retrieve_files_with_deletes(session: SessionDep, user: UserAuthDep) ->
 async def retrieve_deleted_file_versions(
     file_path: str, session: SessionDep,
     user: UserAuthDep, logger: LoggerDep,
+    
+    api_key: KeyPermRead,
     amount: PositiveInt = 100
 ) -> list[DeletedFilesGet]:
     user_datadir: Path = ospaths.get_user_datadir(user.username)
@@ -51,7 +59,10 @@ async def retrieve_deleted_file_versions(
 
 
 @router.delete('/')
-async def empty_trashbin(session: SessionDep, user: UserAuthDep, logger: LoggerDep) -> GenericSuccess:
+async def empty_trashbin(
+    session: SessionDep, user: UserAuthDep, 
+    logger: LoggerDep, api_key: KeyPermDelete
+) -> GenericSuccess:
     await database.files.deleted_files.empty_trashbin(
         session, user.username
     )
@@ -62,6 +73,7 @@ async def empty_trashbin(session: SessionDep, user: UserAuthDep, logger: LoggerD
 async def delete_file_versions(
     file_path: str, session: SessionDep,
     user: UserAuthDep, logger: LoggerDep,
+    api_key: KeyPermDelete,
     offset: NonNegativeInt = 0, delete_all: bool = False
 ) -> GenericSuccess:
     """Remove versions of a deleted file.
@@ -116,6 +128,7 @@ async def delete_file_versions(
 async def restore_file_version(
     file_path: str, session: SessionDep,
     user: UserAuthDep, logger: LoggerDep,
+    api_key: KeyPermUpdate,
     offset: Annotated[NonNegativeInt, Body(embed=True)] = 0
 ) -> GenericSuccess:
     user_datadir: Path = ospaths.get_user_datadir(user.username)

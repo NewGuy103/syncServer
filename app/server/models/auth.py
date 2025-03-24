@@ -31,7 +31,7 @@ class APIKeyCreate(APIKeyBase):
 
 
 class APIKeyInfo(APIKeyBase):
-    pass
+    expired: bool
 
 
 class AccessTokenResponse(BaseModel):
