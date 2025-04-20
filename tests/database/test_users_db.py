@@ -2,9 +2,9 @@ from pathlib import Path
 import pytest
 
 from sqlmodel.ext.asyncio.session import AsyncSession
-from app.internal.database import database
-from app.internal.constants import DBReturnValues
-from app.internal.config import settings, data_directories
+from app.server.internal.database import database
+from app.server.internal.constants import DBReturnValues
+from app.server.internal.config import settings, data_directories
 
 pytestmark = pytest.mark.anyio
 

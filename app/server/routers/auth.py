@@ -36,6 +36,10 @@ async def token_login(
     form_data: Annotated[OAuth2PasswordRequestFormStrict, Depends()],
     logger: LoggerDep, session: SessionDep
 ):
+    """OAuth2 token login.
+    
+    Passing an `X-API-Key` header, valid or not, will throw an HTTP 403 Forbidden.
+    """
     if len(form_data.username) > 30:
         access_token_error = AccessTokenError(
             error=AccessTokenErrorCodes.invalid_request,
@@ -78,6 +82,10 @@ async def token_login(
 
 @router.post('/revoke', dependencies=[KeyNotAllowed])
 async def revoke_login_token(user: UserAuthDep, token: Annotated[str, Form()], session: SessionDep) -> None:
+    """OAuth2 token revocation.
+    
+    Passing an `X-API-Key` header, valid or not, will throw an HTTP 403 Forbidden.
+    """
     token_valid = await database.sessions.check_session_validity(session, token)
     if not token_valid:
         return

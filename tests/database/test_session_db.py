@@ -3,7 +3,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 
 from sqlmodel.ext.asyncio.session import AsyncSession
-from app.internal.database import database
+from app.server.internal.database import database
 
 pytestmark = pytest.mark.anyio
 

@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Annotated
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import NonNegativeInt, PositiveInt
@@ -21,7 +21,7 @@ router = APIRouter(prefix='/deleted')
 async def retrieve_files_with_deletes(
     session: SessionDep, user: UserAuthDep,
     api_key: KeyPermRead
-) -> list[str]:
+) -> list[PurePosixPath]:
     res = await database.files.deleted_files.show_files_with_deletes(
         session, user.username
     )

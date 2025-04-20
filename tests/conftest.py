@@ -12,10 +12,10 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 
 from app.server.main import app, app_lifespan
-from app.deps import get_session
-from app.models.common import UserInfo
-from app.internal.config import settings
-from app.internal.database import database
+from app.server.deps import get_session
+from app.server.models.common import UserInfo
+from app.server.internal.config import settings
+from app.server.internal.database import database
 
 
 def pytest_collection_modifyitems(session, config, items):

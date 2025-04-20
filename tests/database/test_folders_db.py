@@ -1,10 +1,11 @@
+from pathlib import PurePosixPath
 import pytest
 import aiofiles
 
 from starlette.datastructures import UploadFile
 from sqlmodel.ext.asyncio.session import AsyncSession
-from app.internal.database import database
-from app.internal.config import data_directories
+from app.server.internal.database import database
+from app.server.internal.config import data_directories
 
 pytestmark = pytest.mark.anyio
 
@@ -46,7 +47,7 @@ async def test_list_folder_data_direct(session: AsyncSession):
         session, 'test_folders_user', mock_folder_path
     )
 
-    assert folder_data.folder_path == '/direct_database_test'
+    assert folder_data.folder_path == PurePosixPath('/direct_database_test')
     assert folder_data.files == []
     assert folder_data.folders == []
 
@@ -83,8 +84,8 @@ async def test_upload_into_folder(session: AsyncSession):
         session, 'test_folders_user', mock_folder_path
     )
 
-    assert folder_data.folder_path == '/direct_database_test'
-    assert folder_data.files == ['/direct_database_test/test_fileupload_direct']
+    assert folder_data.folder_path == PurePosixPath('/direct_database_test')
+    assert folder_data.files == [PurePosixPath('/direct_database_test/test_fileupload_direct')]
     assert folder_data.folders == []
 
 
@@ -107,9 +108,9 @@ async def test_nested_folder_create_direct(session: AsyncSession):
         session, 'test_folders_user', mock_parent_path
     )
 
-    assert folder_data.folder_path == '/direct_database_test'
-    assert folder_data.files == ['/direct_database_test/test_fileupload_direct']
-    assert folder_data.folders == ['/direct_database_test/nested_folder']
+    assert folder_data.folder_path == PurePosixPath('/direct_database_test')
+    assert folder_data.files == [PurePosixPath('/direct_database_test/test_fileupload_direct')]
+    assert folder_data.folders == [PurePosixPath('/direct_database_test/nested_folder')]
 
 
 async def test_rename_folder_direct(session: AsyncSession):
@@ -136,9 +137,9 @@ async def test_rename_folder_direct(session: AsyncSession):
         session, 'test_folders_user', mock_new_path
     )
 
-    assert folder_data.folder_path == '/direct_database_test_rename'
-    assert folder_data.files == ['/direct_database_test_rename/test_fileupload_direct']
-    assert folder_data.folders == ['/direct_database_test_rename/nested_folder']
+    assert folder_data.folder_path == PurePosixPath('/direct_database_test_rename')
+    assert folder_data.files == [PurePosixPath('/direct_database_test_rename/test_fileupload_direct')]
+    assert folder_data.folders == [PurePosixPath('/direct_database_test_rename/nested_folder')]
 
 
 async def test_delete_folder_direct(session: AsyncSession):

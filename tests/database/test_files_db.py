@@ -4,8 +4,8 @@ import aiofiles
 from starlette.datastructures import UploadFile
 
 from sqlmodel.ext.asyncio.session import AsyncSession
-from app.internal.database import database
-from app.internal.config import data_directories
+from app.server.internal.database import database
+from app.server.internal.config import data_directories
 
 pytestmark = pytest.mark.anyio
 

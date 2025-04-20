@@ -1,3 +1,4 @@
+from pathlib import PurePosixPath
 import pytest
 import aiofiles
 
@@ -5,9 +6,9 @@ from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 from httpx import AsyncClient
 
-from app.models.folders import FolderContents
-from app.internal.database import database
-from app.internal.config import data_directories
+from app.server.models.folders import FolderContents
+from app.server.internal.database import database
+from app.server.internal.config import data_directories
 
 pytestmark = pytest.mark.anyio
 
@@ -135,8 +136,8 @@ async def test_read_root_folder(client: AsyncClient, admin_headers: dict):
     except ValidationError as e:
         assert False, e
 
-    assert folder_contents.folder_path == '/'
-    assert '/test_folder' in folder_contents.folders
+    assert folder_contents.folder_path == PurePosixPath('/')
+    assert PurePosixPath('/test_folder') in folder_contents.folders
 
 
 async def test_read_folder(client: AsyncClient, admin_headers: dict):
@@ -149,8 +150,8 @@ async def test_read_folder(client: AsyncClient, admin_headers: dict):
     except ValidationError as e:
         assert False, e
 
-    assert folder_contents.folder_path == '/test_folder'
-    assert '/test_folder/file1' in folder_contents.files
+    assert folder_contents.folder_path == PurePosixPath('/test_folder')
+    assert PurePosixPath('/test_folder/file1') in folder_contents.files
 
 
 async def test_rename_folder(

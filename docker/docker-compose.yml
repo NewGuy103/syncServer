@@ -1,0 +1,34 @@
+volumes:
+  postgres_data:
+
+services:
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data:rw
+    environment:
+      - POSTGRES_USER=syncserver
+      - POSTGRES_DB=syncserver
+      - POSTGRES_PASSWORD=helloworld
+  valkey:
+    image: valkey/valkey
+    container_name: valkey
+  syncserver_fastapi:
+    # image: ghcr.io/newguy103/syncserver-fastapi:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: syncserver_fastapi
+    volumes:
+      - ./syncserver:/app/syncserver:rw
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=syncserver
+      - POSTGRES_USER=syncserver
+      - POSTGRES_PASSWORD=helloworld
+      - VALKEY_URI=valkey://valkey:6379
+    ports:
+      - 8000:8000
+

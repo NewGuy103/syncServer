@@ -4,9 +4,9 @@ from datetime import datetime, timezone, timedelta
 from httpx import AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.common import UserInfo
-from app.internal.database import database
-from app.internal.config import settings
+from app.server.models.common import UserInfo
+from app.server.internal.database import database
+from app.server.internal.config import settings
 
 
 pytestmark = pytest.mark.anyio

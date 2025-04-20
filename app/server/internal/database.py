@@ -13,6 +13,7 @@ from pathlib import Path
 
 from sqlmodel import SQLModel, delete, desc, null, select, distinct
 from sqlalchemy.pool import AsyncAdaptedQueuePool
+from sqlalchemy.orm import selectinload
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -732,6 +733,7 @@ class DeletedFileMethods:
         self, session: AsyncSession, 
         username: str
     ) -> list[str]:
+        """Returns a list of path-like strings starting with `/`."""
         user: Users | None = await self.maindb.get_user(session, username)
         if not user:
             raise ValueError(f"username {username} is invalid")
@@ -1207,10 +1209,15 @@ class FolderMethods:
         if not user:
             raise ValueError(f"user '{username}' does not exist")
         
-        result = await session.exec(select(Folders).where(
-            Folders.user_id == user.user_id,
-            Folders.folder_path == str(folder_path)
-        ))
+        stmt = (
+            select(Folders)
+            .options(selectinload(Folders.child_folders))
+            .where(
+                Folders.user_id == user.user_id,
+                Folders.folder_path == str(folder_path)
+            )
+        )
+        result = await session.exec(stmt)
         folder = result.one()
 
         files: list[str] = []
@@ -1228,6 +1235,7 @@ class FolderMethods:
             files.append(new_path)
         
         await session.refresh(folder)
+        # i hate you implicit IO (╯°□°）╯︵ ┻━┻
         for child_folder in folder.child_folders:
             os_folderpath: Path = Path(child_folder.folder_path)
             new_path = '/' + str(os_folderpath.relative_to(user_datadir))
@@ -1275,10 +1283,15 @@ class FolderMethods:
         if not user:
             raise ValueError(f"user '{username}' does not exist")
         
-        result = await session.exec(select(Folders).where(
-            Folders.user_id == user.user_id,
-            Folders.folder_path == str(folder_path)
-        ))
+        stmt = (
+            select(Folders)
+            .options(selectinload(Folders.child_folders))
+            .where(
+                Folders.user_id == user.user_id,
+                Folders.folder_path == str(folder_path)
+            )
+        )
+        result = await session.exec(stmt)
         folder = result.one()
 
         lock = self.folder_lock(folder_path)
@@ -1291,6 +1304,8 @@ class FolderMethods:
                 logger.debug("Renamed file '%s' to '%s' in folder '%s'", file_path, renamed_filepath, new_path)
                 session.add(file)
             
+            # randomly threw MissingGreenlet even when using lazy='selectin'
+            # had to use .options() :(
             for child_folder in folder.child_folders:
                 child_folderpath = Path(child_folder.folder_path)
                 renamed_folderpath = child_folderpath.parent.with_name(new_path.name) / child_folderpath.name
