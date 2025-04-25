@@ -1,31 +1,20 @@
-# Fix some tests regarding database and tests
+# Very simple bug fix
 
 **Version**: v0.1.0
 
-**Date:** 20/04/2025
+**Date:** 25/04/2025
 
 ## Additions
 
-**`app/server/routers/auth.py`**:
-
-* Added simple docstring explaining passing in `X-Api-Key` to `/token` and `/revoke`
-  will throw an HTTP 403 Forbidden.
+None.
 
 ## Changes
 
-**`app/server/models/folders.py`**:
+**`app/server/routers/auth.py`**:
 
-* Now requires a PurePosixPath instead of a string as the data in the list.
-
-**`app/server/routers/deletedfiles.py`**:
-
-* GET `/api/files/deleted/` now returns a `list[PurePosixPath]` instead of a `list[str]`.
-
-**`app/server/internal/database.py`**:
-
-* `FolderMethods.list_folder_data()` and `rename_folder()` now uses `.options(selectinload)` to fix
-  a bug where implicit IO happens.
+* GET/DELETE `/api/auth/api_keys/{key_name}` now matches all paths (`{key_name:path}`) to
+  prevent unexpected errors when an API key name has a slash (`/`).
 
 ## Misc
 
-* Tests relating to server now uses the import `app.server` instead of `app`.
+* None.

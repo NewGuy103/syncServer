@@ -124,7 +124,7 @@ async def create_api_key(
     return api_key
 
 
-@router.delete('/api_keys/{key_name}')
+@router.delete('/api_keys/{key_name:path}')
 async def delete_api_key(
     key_name: str, logger: LoggerDep, session: SessionDep,
     user: UserAuthDep, api_key: KeyPermDelete
@@ -151,7 +151,7 @@ async def list_api_keys(
     return keys
 
 
-@router.get('/api_keys/{key_name}')
+@router.get('/api_keys/{key_name:path}')
 async def get_key_information(
     key_name: str,
     user: UserAuthDep, api_key: KeyPermRead,

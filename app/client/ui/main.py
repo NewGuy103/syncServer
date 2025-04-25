@@ -17,9 +17,10 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
 from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QLabel,
-    QLineEdit, QMainWindow, QMenu, QMenuBar,
-    QPushButton, QSizePolicy, QStackedWidget, QStatusBar,
-    QTabWidget, QVBoxLayout, QWidget)
+    QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
+    QMenu, QMenuBar, QPushButton, QSizePolicy,
+    QStackedWidget, QStatusBar, QTabWidget, QVBoxLayout,
+    QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -121,10 +122,67 @@ class Ui_MainWindow(object):
         self.appTabWidget.setObjectName(u"appTabWidget")
         self.dashboardTab = QWidget()
         self.dashboardTab.setObjectName(u"dashboardTab")
+        self.label = QLabel(self.dashboardTab)
+        self.label.setObjectName(u"label")
+        self.label.setGeometry(QRect(10, 10, 201, 41))
+        font2 = QFont()
+        font2.setPointSize(15)
+        self.label.setFont(font2)
         self.appTabWidget.addTab(self.dashboardTab, "")
-        self.tab_2 = QWidget()
-        self.tab_2.setObjectName(u"tab_2")
-        self.appTabWidget.addTab(self.tab_2, "")
+        self.filesTab = QWidget()
+        self.filesTab.setObjectName(u"filesTab")
+        self.fileTabFrame = QFrame(self.filesTab)
+        self.fileTabFrame.setObjectName(u"fileTabFrame")
+        self.fileTabFrame.setGeometry(QRect(20, 20, 1291, 551))
+        self.fileTabFrame.setFrameShape(QFrame.Shape.StyledPanel)
+        self.fileTabFrame.setFrameShadow(QFrame.Shadow.Raised)
+        self.layoutWidget = QWidget(self.fileTabFrame)
+        self.layoutWidget.setObjectName(u"layoutWidget")
+        self.layoutWidget.setGeometry(QRect(20, 20, 1249, 511))
+        self.fileListLayout = QVBoxLayout(self.layoutWidget)
+        self.fileListLayout.setSpacing(6)
+        self.fileListLayout.setObjectName(u"fileListLayout")
+        self.fileListLayout.setContentsMargins(0, 0, 0, 0)
+        self.fileListLabel = QLabel(self.layoutWidget)
+        self.fileListLabel.setObjectName(u"fileListLabel")
+        font3 = QFont()
+        font3.setPointSize(12)
+        font3.setBold(False)
+        self.fileListLabel.setFont(font3)
+        self.fileListLabel.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter)
+        self.fileListLabel.setIndent(20)
+
+        self.fileListLayout.addWidget(self.fileListLabel)
+
+        self.fileListWidget = QListWidget(self.layoutWidget)
+        self.fileListWidget.setObjectName(u"fileListWidget")
+
+        self.fileListLayout.addWidget(self.fileListWidget)
+
+        self.appTabWidget.addTab(self.filesTab, "")
+        self.apiKeysTab = QWidget()
+        self.apiKeysTab.setObjectName(u"apiKeysTab")
+        self.layoutWidget1 = QWidget(self.apiKeysTab)
+        self.layoutWidget1.setObjectName(u"layoutWidget1")
+        self.layoutWidget1.setGeometry(QRect(30, 20, 1271, 551))
+        self.apiKeyListLayout = QVBoxLayout(self.layoutWidget1)
+        self.apiKeyListLayout.setSpacing(10)
+        self.apiKeyListLayout.setObjectName(u"apiKeyListLayout")
+        self.apiKeyListLayout.setContentsMargins(0, 0, 0, 0)
+        self.apiKeyListLabel = QLabel(self.layoutWidget1)
+        self.apiKeyListLabel.setObjectName(u"apiKeyListLabel")
+        font4 = QFont()
+        font4.setPointSize(16)
+        self.apiKeyListLabel.setFont(font4)
+
+        self.apiKeyListLayout.addWidget(self.apiKeyListLabel)
+
+        self.apiKeyListWidget = QListWidget(self.layoutWidget1)
+        self.apiKeyListWidget.setObjectName(u"apiKeyListWidget")
+
+        self.apiKeyListLayout.addWidget(self.apiKeyListWidget)
+
+        self.appTabWidget.addTab(self.apiKeysTab, "")
 
         self.gridLayout.addWidget(self.appTabWidget, 0, 0, 1, 1)
 
@@ -158,7 +216,7 @@ class Ui_MainWindow(object):
         self.passwordLineEdit.returnPressed.connect(self.loginButton.click)
 
         self.mainStackedWidget.setCurrentIndex(1)
-        self.appTabWidget.setCurrentIndex(0)
+        self.appTabWidget.setCurrentIndex(1)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -184,8 +242,12 @@ class Ui_MainWindow(object):
 #endif // QT_CONFIG(tooltip)
         self.serverUrlLineEdit.setPlaceholderText(QCoreApplication.translate("MainWindow", u"Enter server hostname", None))
         self.loginLabel.setText(QCoreApplication.translate("MainWindow", u"syncServer Login", None))
+        self.label.setText(QCoreApplication.translate("MainWindow", u"Dashboard stuff TBA", None))
         self.appTabWidget.setTabText(self.appTabWidget.indexOf(self.dashboardTab), QCoreApplication.translate("MainWindow", u"Dashboard", None))
-        self.appTabWidget.setTabText(self.appTabWidget.indexOf(self.tab_2), QCoreApplication.translate("MainWindow", u"Tab 2", None))
+        self.fileListLabel.setText(QCoreApplication.translate("MainWindow", u"Folder: /", None))
+        self.appTabWidget.setTabText(self.appTabWidget.indexOf(self.filesTab), QCoreApplication.translate("MainWindow", u"Files", None))
+        self.apiKeyListLabel.setText(QCoreApplication.translate("MainWindow", u"Your API Keys", None))
+        self.appTabWidget.setTabText(self.appTabWidget.indexOf(self.apiKeysTab), QCoreApplication.translate("MainWindow", u"API Keys", None))
         self.menuAbout.setTitle(QCoreApplication.translate("MainWindow", u"Help", None))
     # retranslateUi
 
