@@ -1030,6 +1030,7 @@ dependencies = [
 client = [
     { name = "keyring" },
     { name = "platformdirs" },
+    { name = "pydantic-settings" },
     { name = "pyside6" },
 ]
 
@@ -1050,7 +1051,8 @@ requires-dist = [
     { name = "passlib", extras = ["argon2"], specifier = ">=1.7.4" },
     { name = "platformdirs", marker = "extra == 'client'", specifier = ">=4.3.7" },
     { name = "pydantic", specifier = ">=2.10.6" },
-    { name = "pydantic-settings", specifier = ">=2.8.1" },
+    { name = "pydantic-settings", specifier = ">=2.9.1" },
+    { name = "pydantic-settings", marker = "extra == 'client'", specifier = ">=2.9.1" },
     { name = "pyside6", marker = "extra == 'client'", specifier = ">=6.9.0" },
     { name = "sqlmodel", specifier = ">=0.0.24" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },

@@ -269,6 +269,75 @@
               <item>
                <widget class="QListWidget" name="fileListWidget"/>
               </item>
+              <item>
+               <layout class="QHBoxLayout" name="optionButtonsLayout">
+                <item>
+                 <widget class="QPushButton" name="showDownloadsManagerButton">
+                  <property name="text">
+                   <string>Downloads Manager</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </widget>
+           </widget>
+          </widget>
+          <widget class="QWidget" name="trashbinTab">
+           <attribute name="title">
+            <string>Trash Bin</string>
+           </attribute>
+           <widget class="QFrame" name="trashbinTabFrame">
+            <property name="geometry">
+             <rect>
+              <x>20</x>
+              <y>20</y>
+              <width>1291</width>
+              <height>551</height>
+             </rect>
+            </property>
+            <property name="frameShape">
+             <enum>QFrame::Shape::StyledPanel</enum>
+            </property>
+            <property name="frameShadow">
+             <enum>QFrame::Shadow::Raised</enum>
+            </property>
+            <widget class="QWidget" name="layoutWidget_4">
+             <property name="geometry">
+              <rect>
+               <x>20</x>
+               <y>20</y>
+               <width>1249</width>
+               <height>511</height>
+              </rect>
+             </property>
+             <layout class="QVBoxLayout" name="trashbinLayout">
+              <property name="spacing">
+               <number>6</number>
+              </property>
+              <item>
+               <widget class="QLabel" name="trashbinLabel">
+                <property name="font">
+                 <font>
+                  <pointsize>12</pointsize>
+                  <bold>false</bold>
+                 </font>
+                </property>
+                <property name="text">
+                 <string>List of deleted files:</string>
+                </property>
+                <property name="alignment">
+                 <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+                </property>
+                <property name="indent">
+                 <number>20</number>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QListWidget" name="trashbinListWidget"/>
+              </item>
              </layout>
             </widget>
            </widget>

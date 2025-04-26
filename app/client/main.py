@@ -3,13 +3,12 @@ import webbrowser
 import traceback
 
 from PySide6.QtWidgets import QMainWindow, QApplication, QMessageBox
-from PySide6.QtCore import QThread, Slot
 from PySide6.QtGui import QCloseEvent
-from .interface import ConfigManager
+
+from .config import AppSettings
 from .ui.main import Ui_MainWindow
 from .controllers.login import LoginController
 from .controllers.apps import AppsController
-from .workers import WorkerThread
 
 
 class MainWindow(QMainWindow):
@@ -23,7 +22,6 @@ class MainWindow(QMainWindow):
         self.ui.setupUi(self)
 
         self.ui.mainStackedWidget.setCurrentIndex(0)
-        self.config_manager = ConfigManager()
 
         # TODO: Make a dialog that shows copyright info and link to source code
         # link it to the fastapi-rewrite branch until its merged into main
@@ -33,29 +31,19 @@ class MainWindow(QMainWindow):
         self.setup_config()
     
     def setup_config(self):
-        self.setup_worker = WorkerThread(self.config_manager.load_from_save)
-        self.setup_thread = QThread(self)
-        
-        self.setup_worker.moveToThread(self.setup_thread)
-        
-        self.setup_worker.dataReady.connect(self.config_loaded)
-        self.setup_worker.excReceived.connect(self.config_load_failed)
-        
-        self.setup_thread.started.connect(self.setup_worker.run)
-        self.setup_worker.dataReady.connect(self.setup_thread.quit)
+        try:
+            self.app_settings = AppSettings()
+            self.config_loaded()
+        except Exception as exc:
+            self.config_load_failed(exc)
 
-        self.setup_worker.excReceived.connect(self.setup_thread.quit)
-        self.setup_thread.start()
-    
-    @Slot(None)
-    def config_loaded(self, data: None):
+    def config_loaded(self):
         self.login_ctrl = LoginController(self)
         self.apps_ctrl = AppsController(self)
 
         self.login_ctrl.login_done.connect(self.apps_ctrl.setup)
         self.login_ctrl.check_saved_credentials()
 
-    @Slot(Exception)
     def config_load_failed(self, exc: Exception):
         tb: str = ''.join(traceback.format_exception(exc, limit=1))
 

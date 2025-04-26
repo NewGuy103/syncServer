@@ -16,11 +16,11 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QIcon, QImage, QKeySequence, QLinearGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
-from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
-    QMenu, QMenuBar, QPushButton, QSizePolicy,
-    QStackedWidget, QStatusBar, QTabWidget, QVBoxLayout,
-    QWidget)
+from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout,
+    QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QMainWindow, QMenu, QMenuBar, QPushButton,
+    QSizePolicy, QStackedWidget, QStatusBar, QTabWidget,
+    QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -159,7 +159,45 @@ class Ui_MainWindow(object):
 
         self.fileListLayout.addWidget(self.fileListWidget)
 
+        self.optionButtonsLayout = QHBoxLayout()
+        self.optionButtonsLayout.setObjectName(u"optionButtonsLayout")
+        self.showDownloadsManagerButton = QPushButton(self.layoutWidget)
+        self.showDownloadsManagerButton.setObjectName(u"showDownloadsManagerButton")
+
+        self.optionButtonsLayout.addWidget(self.showDownloadsManagerButton)
+
+
+        self.fileListLayout.addLayout(self.optionButtonsLayout)
+
         self.appTabWidget.addTab(self.filesTab, "")
+        self.trashbinTab = QWidget()
+        self.trashbinTab.setObjectName(u"trashbinTab")
+        self.trashbinTabFrame = QFrame(self.trashbinTab)
+        self.trashbinTabFrame.setObjectName(u"trashbinTabFrame")
+        self.trashbinTabFrame.setGeometry(QRect(20, 20, 1291, 551))
+        self.trashbinTabFrame.setFrameShape(QFrame.Shape.StyledPanel)
+        self.trashbinTabFrame.setFrameShadow(QFrame.Shadow.Raised)
+        self.layoutWidget_4 = QWidget(self.trashbinTabFrame)
+        self.layoutWidget_4.setObjectName(u"layoutWidget_4")
+        self.layoutWidget_4.setGeometry(QRect(20, 20, 1249, 511))
+        self.trashbinLayout = QVBoxLayout(self.layoutWidget_4)
+        self.trashbinLayout.setSpacing(6)
+        self.trashbinLayout.setObjectName(u"trashbinLayout")
+        self.trashbinLayout.setContentsMargins(0, 0, 0, 0)
+        self.trashbinLabel = QLabel(self.layoutWidget_4)
+        self.trashbinLabel.setObjectName(u"trashbinLabel")
+        self.trashbinLabel.setFont(font3)
+        self.trashbinLabel.setAlignment(Qt.AlignmentFlag.AlignLeading|Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter)
+        self.trashbinLabel.setIndent(20)
+
+        self.trashbinLayout.addWidget(self.trashbinLabel)
+
+        self.trashbinListWidget = QListWidget(self.layoutWidget_4)
+        self.trashbinListWidget.setObjectName(u"trashbinListWidget")
+
+        self.trashbinLayout.addWidget(self.trashbinListWidget)
+
+        self.appTabWidget.addTab(self.trashbinTab, "")
         self.apiKeysTab = QWidget()
         self.apiKeysTab.setObjectName(u"apiKeysTab")
         self.layoutWidget1 = QWidget(self.apiKeysTab)
@@ -245,7 +283,10 @@ class Ui_MainWindow(object):
         self.label.setText(QCoreApplication.translate("MainWindow", u"Dashboard stuff TBA", None))
         self.appTabWidget.setTabText(self.appTabWidget.indexOf(self.dashboardTab), QCoreApplication.translate("MainWindow", u"Dashboard", None))
         self.fileListLabel.setText(QCoreApplication.translate("MainWindow", u"Folder: /", None))
+        self.showDownloadsManagerButton.setText(QCoreApplication.translate("MainWindow", u"Downloads Manager", None))
         self.appTabWidget.setTabText(self.appTabWidget.indexOf(self.filesTab), QCoreApplication.translate("MainWindow", u"Files", None))
+        self.trashbinLabel.setText(QCoreApplication.translate("MainWindow", u"List of deleted files:", None))
+        self.appTabWidget.setTabText(self.appTabWidget.indexOf(self.trashbinTab), QCoreApplication.translate("MainWindow", u"Trash Bin", None))
         self.apiKeyListLabel.setText(QCoreApplication.translate("MainWindow", u"Your API Keys", None))
         self.appTabWidget.setTabText(self.appTabWidget.indexOf(self.apiKeysTab), QCoreApplication.translate("MainWindow", u"API Keys", None))
         self.menuAbout.setTitle(QCoreApplication.translate("MainWindow", u"Help", None))

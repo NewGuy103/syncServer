@@ -1,30 +1,28 @@
-# Merge changes into a dedicated changelog/ directory
+# Simple refactors and planning to move to GitHub pages
 
 **Version**: v0.1.0
 
-**Date:** 20/04/2025
+**Date:** 26/04/2025
 
 ## Additions
 
-**`changelog/`**:
-
-* Created `changelog/` directory to organize changelog for both client, server and other changes.
-
-**`docker/docker-compose.yml`**:
-
-* Added docker compose example for simpler setup.
+None.
 
 ## Changes
 
-**`/CHANGES-*.md`**:
+**`/.readthedocs.yaml`**:
 
-* Deleted `CHANGES.md` and `CHANGES-server.md`.
+* Deleted `.readthedocs.yaml` with the intent of moving to Material for MkDocs and GitHub pages.
 
 **`/pyproject.toml`**:
 
-* Added optional dependency `client` to put the client UI dependencies.
-* Updated dependencies.
+* Added `pydantic-settings` as a client dependency.
+
+**`/README.md`**:
+
+* Added structure for readme file to make adding documentation easier later.
 
 ## Misc
 
-* Will clean up the repository after most client code is complete.
+* Planning to move to GitHub pages by using a GitHub Actions workflow to build documentation.
+* Once this rewrite is complete, will merge into main and keep the old code.

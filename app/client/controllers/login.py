@@ -33,14 +33,16 @@ class LoginController(QObject):
     def check_saved_credentials(self):
         """Only check for saved keyring credentials, not verify, leave that to the dashboard"""
         
-        conf_data = self.mw_parent.config_manager.get_data()
         auth_header = keyring.get_password(
             'newguy103-syncserver',
-            conf_data.username
+            self.mw_parent.app_settings.username
         )
 
         if auth_header:
-            self.login_done.emit(conf_data.username, conf_data.server_url)
+            self.login_done.emit(
+                self.mw_parent.app_settings.username, 
+                str(self.mw_parent.app_settings.server_url)
+            )
 
     def login_start(self):
         server_url = self.ui.serverUrlLineEdit.text()
@@ -104,19 +106,17 @@ class LoginController(QObject):
             )
             return
         
-        # TODO: Make it also save the same URL in a config file or something
         keyring.set_password(
             'newguy103-syncserver', 
             self.provided_username, 
             data.access_token
         )
-        conf_data = self.mw_parent.config_manager.get_data()
-        conf_data.server_url = self.provided_server_url
+        self.mw_parent.app_settings.server_url = self.provided_server_url
+        self.mw_parent.app_settings.username = self.provided_username
 
-        conf_data.username = self.provided_username
-        self.mw_parent.config_manager.save_data(conf_data)
-
+        self.mw_parent.app_settings.save_settings()
         self.login_done.emit(self.provided_username, self.provided_server_url)
+
         return
     
     @Slot(Exception)

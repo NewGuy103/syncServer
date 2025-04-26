@@ -1,20 +1,19 @@
-import os
 import json
 import logging
+
+import tempfile
 import httpx
 
-from pathlib import PurePosixPath
-from platformdirs import PlatformDirs
-from pydantic import TypeAdapter, ValidationError
+from pathlib import Path, PurePosixPath
+from pydantic import TypeAdapter
 
 from .models import (
     APIKeyCreate, AccessTokenResponse, AccessTokenError, 
-    APIKeyInfo, FolderContents, GenericSuccess, ConfigData
+    APIKeyInfo, FolderContents, GenericSuccess
 )
-from ..version import __version__
 
 
-dirs = PlatformDirs("syncserver-client", "newguy103", version=__version__)
+CHUNK_SIZE = 10 * 1024 * 1024  # 10MiB
 
 # TODO: Implement a better/simpler log setup
 logger: logging.Logger = logging.getLogger(__name__)
@@ -30,39 +29,6 @@ stream_handler.setFormatter(formatter)
 
 logger.addHandler(stream_handler)
 
-
-# TODO: temp fix for a simple config manager using pydantic
-class ConfigManager:
-    def __init__(self):
-        self.default_data: ConfigData = ConfigData(
-            server_url='http://localhost:8000',
-            username='admin'
-        )
-        
-        if not os.path.isdir(dirs.user_config_dir):
-            os.makedirs(dirs.user_config_dir)
-
-    def load_from_save(self):
-        config_path = os.path.join(dirs.user_config_dir, 'config.json')
-        if not os.path.isfile(config_path):
-            with open(config_path, 'w') as file:
-                file.write(self.default_data.model_dump_json(indent=4))
-        
-        with open(config_path, 'r') as file:
-            stored_config = file.read()
-        
-        # throw an error on fail, pyside6 app should catch this in the WorkerThread
-        self.config_data = ConfigData.model_validate_json(stored_config)    
-        return
-    
-    def get_data(self):
-        return self.config_data.model_copy(deep=True)
-    
-    def save_data(self, config_model: ConfigData):
-        config_path = os.path.join(dirs.user_config_dir, 'config.json')
-        with open(config_path, 'w') as file:
-            file.write(config_model.model_dump_json(indent=4))
-        
 
 # TODO: Use async httpx when PySide6 supports the asyncio event loop features
 # or learn trio to make this asyncio
@@ -164,12 +130,24 @@ class FilesInterface:
         self.parent = parent
         self.client = parent.client
 
-    def upload_file(self, folder: str, filename: str, file_path: str) -> GenericSuccess:
+    def make_url(self, folder: str, filename: str) -> str:
+        """Make the URL where the file (and optionally folder) points to.
+        
+        `folder` is a PurePosixPath turned into a string, 
+        so the URL is set like `/api/files/file{folder}/{filename}`.
+
+        Which equates to: `/api/files/file/myfolder/filename`
+        """
         if folder == '/':
             url: str = f'/api/files/file/{filename}'
         else:
-            url: str = f'/api/files/file/{folder}/{filename}'
+            url: str = f'/api/files/file{folder}/{filename}'
         
+        return url
+    
+    def upload_file(self, folder: str, filename: str, file_path: str) -> GenericSuccess:
+        url: str = self.make_url(folder, filename)
+
         try:
             with open(file_path, 'rb') as file:
                 files = {'file': (filename, file)}
@@ -195,11 +173,8 @@ class FilesInterface:
         return res_model
     
     def update_file(self, folder: str, filename: str, file_path: str) -> GenericSuccess:
-        if folder == '/':
-            url: str = f'/api/files/file/{filename}'
-        else:
-            url: str = f'/api/files/file/{folder}/{filename}'
-        
+        url: str = self.make_url(folder, filename)
+
         try:
             with open(file_path, 'rb') as file:
                 files = {'file': (filename, file)}
@@ -225,11 +200,8 @@ class FilesInterface:
         return res_model
     
     def delete_file(self, folder: str, filename: str) -> GenericSuccess:
-        if folder == '/':
-            url: str = f'/api/files/file/{filename}'
-        else:
-            url: str = f'/api/files/file/{folder}/{filename}'
-        
+        url: str = self.make_url(folder, filename)
+
         try:
             res = self.client.delete(url)
             
@@ -253,11 +225,8 @@ class FilesInterface:
         return res_model
     
     def rename_file(self, folder: str, old_name: str, new_name: str):
-        if folder == '/':
-            url: str = f'/api/files/file/{old_name}'
-        else:
-            url: str = f'/api/files/file/{folder}/{old_name}'
-        
+        url: str = self.make_url(folder, old_name)
+
         try:
             data = {'new_name': new_name}
             res = self.client.patch(url, json=data)
@@ -280,6 +249,38 @@ class FilesInterface:
             raise
 
         return res_model
+    
+    def download_file(self, folder: str, filename: str, local_path: Path) -> None:
+        url: str = self.make_url(folder, filename)
+
+        try:
+            with self.client.stream('GET', url) as res, tempfile.NamedTemporaryFile(
+                mode='w+b', delete=False, suffix='.part',
+                prefix='syncserver_download-'
+            ) as file:
+                for data in res.iter_bytes(CHUNK_SIZE):
+                    file.write(data)
+            
+                tmp_path = Path(file.name)
+            
+            tmp_path.rename(local_path)
+        except httpx.HTTPStatusError as exc:
+            logger.exception("HTTP Status Error, HTTP %d:\n%s", exc.response.status_code, exc.response.text)
+            raise
+        except httpx.HTTPError:
+            logger.exception("Generic HTTP Error:")
+            raise
+        except json.JSONDecodeError:
+            logger.exception("Expected JSON data, but received this: [%s]", res.text)
+            raise
+        except OSError:
+            logger.exception("Could not open temp file:")
+            raise
+        except Exception:
+            logger.critical("Unexpected error during request:", exc_info=True)
+            raise
+
+        return None
 
 
 class FolderInterface:

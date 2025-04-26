@@ -1,17 +1,25 @@
 from enum import StrEnum, auto
 from typing import Annotated, Literal
 from pydantic import AwareDatetime, BaseModel, FutureDatetime
-from pathlib import PurePosixPath
-
-# Client config
-class ConfigData(BaseModel):
-    username: str
-    server_url: str
+from pathlib import Path, PurePosixPath
 
 
+# Controller state
 class FileListWidgetData(BaseModel):
     data_type: Literal['file', 'folder']
     path: PurePosixPath
+
+
+class UploadStartedState(BaseModel):
+    random_id: str
+    local_path: Path
+    server_path: PurePosixPath
+
+
+class DownloadStartedState(BaseModel):
+    random_id: str
+    local_path: Path
+    server_path: PurePosixPath
 
 
 class GenericSuccess(BaseModel):

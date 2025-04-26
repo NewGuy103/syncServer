@@ -1,51 +1,58 @@
-# Make client module more modular and maintainable
+# Implement more files tab actions
 
 **Version**: v0.1.0
 
-**Date:** 25/04/2025
+**Date:** 26/04/2025
 
 ## Additions
 
-**`pyside6_ui/*_dialog.ui` | `app/client/ui`**:
+**`pyside6_ui/files_download_manager.ui` | `app/client/ui/files_download_manager.py`**:
 
-* Added simple dialogs specific to their function (API keys, files).
+* Added download manager UI for files tab.
 
 **`app/client/interface.py`**:
 
-* Added makeshift config manager that uses pydantic to get/set config data.
-* Added some client code to interact with the API, but not complete.
-* No longers sets the `Content-Type` header when creating the client.
-* Now raises a `RuntimeError` if ran as a script.
+* Added `FilesManager.download_file()` to download a file from the server, default chunk size is 10 MiB.
+* Added `FilesManager.make_url()` to create the URL for the file path.
 
 **`app/client/models.py`**:
 
-* Copied more API models from the server to the client.
-* Copied over `GenericSuccess`.
-* Added `FileListWidgetData` as a simple model to differentiate from a file or folder in the list widget.
+* Added `DownloadStartedState` and `UploadStartedState` models.
 
-**`app/client/workers.py`**:
+**`app/client/config.py`**:
 
-* Moved `WorkerThread` to this module to make it more maintainable.
+* Added to replace the makeshift config manager and to store other config-related data.
 
-**`app/client/controllers`**:
+**`app/client/controllers/tabs/files.py`**:
 
-* Moved all controller-related code to this module.
-
-**`app/client/controllers/tabs`**:
-
-* Created to store the controllers for the specific tabs for all app-related operations.
+* Separated a lot of client code into specific classes with their parent being `FilesTabController.
+* Created `DownloadController` to allow downloading a file.
+* Created `FilesDownloadManagerDialog` to handle showing running and completed downloads/uploads.
 
 ## Changes
 
+**`app/client/interface.py`**:
+
+* Removed makeshift config manager in favor of `pydantic-settings`.
+
+**`app/client/models.py`**:
+
+* Removed `ConfigData` in favor of `pydantic-settings`.
+
 **`app/client/__main__.py`**:
 
-* Now references `main` instead of `gui`.
+* Now checks for required dependencies before proceeding with running the app.
 
 **`app/client/main.py`**:
 
-* Made `main.py` more modular by removing a lot of code and putting them into modules.
-* Now loads the app config and throws a fatal error if config loading fails.
+* No longer uses a `WorkerThead` to load config data.
+* Now uses `AppSettings` from the config module.
+
+**`app/client/controllers/login.py`**:
+
+* Now uses `AppSettings` instead of the makeshift config manager.
 
 ## Misc
 
-* API client still incomplete, UI is nearing completion so far.
+* Will work on implementing folder actions, deleted files and the dashboard soon.
+* User management will probably not be implemented yet.
