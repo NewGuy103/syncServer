@@ -1,5 +1,10 @@
 # newguy103-syncserver
 
+## NOTE
+
+This branch is solely for archiving the previous flask code of syncserver. You probably want
+the FastAPI version at `fastapi-rewrite` (or `main` if it was already merged).
+
 ## Overview
 
 **newguy103-syncserver** is a Python package designed to simplify file synchronization operations through a server-client architecture. The package provides both the server, built on Flask, and a client module for interacting with the server.
