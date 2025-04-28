@@ -1,8 +1,8 @@
-# Simple refactors and planning to move to GitHub pages
+# Pin python to 3.13
 
 **Version**: v0.1.0
 
-**Date:** 26/04/2025
+**Date:** 28/04/2025
 
 ## Additions
 
@@ -10,19 +10,14 @@ None.
 
 ## Changes
 
-**`/.readthedocs.yaml`**:
+**`docker/Dockerfile`**:
 
-* Deleted `.readthedocs.yaml` with the intent of moving to Material for MkDocs and GitHub pages.
+* Changed from Python 3.12 to Python 3.13.
 
-**`/pyproject.toml`**:
+**`/.python-version`**:
 
-* Added `pydantic-settings` as a client dependency.
-
-**`/README.md`**:
-
-* Added structure for readme file to make adding documentation easier later.
+* Changed pin from 3.12 to 3.13.
 
 ## Misc
 
-* Planning to move to GitHub pages by using a GitHub Actions workflow to build documentation.
-* Once this rewrite is complete, will merge into main and keep the old code.
+* Planning to make Pytest run in a GitHub Actions workflow.

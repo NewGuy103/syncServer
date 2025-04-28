@@ -4,11 +4,13 @@ import httpx
 import keyring
 
 from PySide6.QtWidgets import QMessageBox
-from PySide6.QtCore import QObject, QThread, Slot
+from PySide6.QtCore import QObject, QThread, Slot, Signal
 from ..interface import MainClient
 from ..workers import WorkerThread
 from .tabs.files import FilesTabController
 from .tabs.api_keys import APIKeysTabController
+from .tabs.trashbin import TrashbinTabController
+
 
 if typing.TYPE_CHECKING:
     from ..main import MainWindow
@@ -23,6 +25,8 @@ class AppsController(QObject):
 
         self.ui.appTabWidget.setCurrentIndex(0)  # dashboard tab
         self.main_client = None
+
+        self.signals = ControllerSignals(self)
     
     @Slot(str, str)
     def setup(self, username: str, server_url: str):
@@ -52,8 +56,12 @@ class AppsController(QObject):
         self.files_ctrl = FilesTabController(self)
         self.apikeys_ctrl = APIKeysTabController(self)
 
+        self.trashbin_ctrl = TrashbinTabController(self)
+        
         self.files_ctrl.setup()
         self.apikeys_ctrl.setup()
+
+        self.trashbin_ctrl.setup()
     
     @Slot(Exception)
     def setup_fail(self, exc: Exception):
@@ -86,3 +94,11 @@ class AppsController(QObject):
                 )
 
         return
+
+
+class ControllerSignals(QObject):
+    files_new_delete = Signal()
+    trashbin_new_restore = Signal()
+
+    def __init__(self, /, parent = None, *, objectName = None):
+        super().__init__(parent, objectName=objectName)

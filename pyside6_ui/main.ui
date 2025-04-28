@@ -190,7 +190,7 @@
         <item row="0" column="0">
          <widget class="QTabWidget" name="appTabWidget">
           <property name="currentIndex">
-           <number>1</number>
+           <number>2</number>
           </property>
           <widget class="QWidget" name="dashboardTab">
            <attribute name="title">
@@ -407,6 +407,9 @@
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="actionSource_Code">
+   <property name="icon">
+    <iconset theme="QIcon::ThemeIcon::HelpAbout"/>
+   </property>
    <property name="text">
     <string>Source Code</string>
    </property>

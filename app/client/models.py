@@ -22,6 +22,11 @@ class DownloadStartedState(BaseModel):
     server_path: PurePosixPath
 
 
+class DeletedFileVersionState(BaseModel):
+    index: int
+    deleted_on: AwareDatetime
+
+
 class GenericSuccess(BaseModel):
     success: Literal[True]
 
@@ -75,3 +80,7 @@ class FolderContents(BaseModel):
     folder_path: PurePosixPath
     files: list[PurePosixPath]
     folders: list[PurePosixPath]
+
+
+class DeletedFilesGet(BaseModel):
+    deleted_on: AwareDatetime

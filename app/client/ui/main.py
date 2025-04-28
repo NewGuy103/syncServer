@@ -29,6 +29,8 @@ class Ui_MainWindow(object):
         MainWindow.resize(1366, 696)
         self.actionSource_Code = QAction(MainWindow)
         self.actionSource_Code.setObjectName(u"actionSource_Code")
+        icon = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.HelpAbout))
+        self.actionSource_Code.setIcon(icon)
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
         self.verticalLayout = QVBoxLayout(self.centralwidget)
@@ -254,7 +256,7 @@ class Ui_MainWindow(object):
         self.passwordLineEdit.returnPressed.connect(self.loginButton.click)
 
         self.mainStackedWidget.setCurrentIndex(1)
-        self.appTabWidget.setCurrentIndex(1)
+        self.appTabWidget.setCurrentIndex(2)
 
 
         QMetaObject.connectSlotsByName(MainWindow)

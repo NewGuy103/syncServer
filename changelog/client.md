@@ -1,58 +1,40 @@
-# Implement more files tab actions
+# Implement trashbin tab and add icons
 
 **Version**: v0.1.0
 
-**Date:** 26/04/2025
+**Date:** 28/04/2025
 
 ## Additions
 
-**`pyside6_ui/files_download_manager.ui` | `app/client/ui/files_download_manager.py`**:
+**`pyside6_ui/trashbin_manager.ui` | `app/client/ui/trashbin_manager.py`**:
 
-* Added download manager UI for files tab.
+* Added trashbin manager for deleted files.
 
 **`app/client/interface.py`**:
 
-* Added `FilesManager.download_file()` to download a file from the server, default chunk size is 10 MiB.
-* Added `FilesManager.make_url()` to create the URL for the file path.
+* Added `DeletedFilesInterface` for deleted files.
 
 **`app/client/models.py`**:
 
-* Added `DownloadStartedState` and `UploadStartedState` models.
+* Added `DeletedFileVersionState` and `DeletedFilesGet` models.
 
-**`app/client/config.py`**:
+**`app/client/controllers/apps.py`**:
 
-* Added to replace the makeshift config manager and to store other config-related data.
+* Added `ControllerSignals` class for signals between app tabs.
 
 **`app/client/controllers/tabs/files.py`**:
 
-* Separated a lot of client code into specific classes with their parent being `FilesTabController.
-* Created `DownloadController` to allow downloading a file.
-* Created `FilesDownloadManagerDialog` to handle showing running and completed downloads/uploads.
+* Implemented folder creation, deletion and renaming.
+
+**`app/client/controllers/tabs/trashbin.py`**:
+
+* Added trashbin functionality.
 
 ## Changes
 
-**`app/client/interface.py`**:
-
-* Removed makeshift config manager in favor of `pydantic-settings`.
-
-**`app/client/models.py`**:
-
-* Removed `ConfigData` in favor of `pydantic-settings`.
-
-**`app/client/__main__.py`**:
-
-* Now checks for required dependencies before proceeding with running the app.
-
-**`app/client/main.py`**:
-
-* No longer uses a `WorkerThead` to load config data.
-* Now uses `AppSettings` from the config module.
-
-**`app/client/controllers/login.py`**:
-
-* Now uses `AppSettings` instead of the makeshift config manager.
+None.
 
 ## Misc
 
-* Will work on implementing folder actions, deleted files and the dashboard soon.
-* User management will probably not be implemented yet.
+* Added icons to some buttons and most actions.
+* Client is almost complete, the final component is the dashboard.

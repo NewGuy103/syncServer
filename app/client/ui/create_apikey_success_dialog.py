@@ -55,6 +55,8 @@ class Ui_CreateAPIKeySuccess(object):
         self.copyLayout.setContentsMargins(0, 0, 0, 0)
         self.copyToClipboardButton = QPushButton(self.horizontalLayoutWidget)
         self.copyToClipboardButton.setObjectName(u"copyToClipboardButton")
+        icon = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.EditCopy))
+        self.copyToClipboardButton.setIcon(icon)
 
         self.copyLayout.addWidget(self.copyToClipboardButton)
 
@@ -63,7 +65,7 @@ class Ui_CreateAPIKeySuccess(object):
 
         self.dialogButtonBox = QDialogButtonBox(CreateAPIKeySuccess)
         self.dialogButtonBox.setObjectName(u"dialogButtonBox")
-        self.dialogButtonBox.setStandardButtons(QDialogButtonBox.StandardButton.Cancel|QDialogButtonBox.StandardButton.Ok)
+        self.dialogButtonBox.setStandardButtons(QDialogButtonBox.StandardButton.Ok)
 
         self.verticalLayout.addWidget(self.dialogButtonBox)
 

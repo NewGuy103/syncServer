@@ -7,14 +7,20 @@ import httpx
 from pathlib import Path, PurePosixPath
 from functools import partial
 
-from PySide6.QtWidgets import QMessageBox, QListWidgetItem, QMenu, QFileDialog, QDialog
+from PySide6.QtWidgets import (
+    QMessageBox, QListWidgetItem, QMenu, 
+    QFileDialog, QDialog, QInputDialog,
+    QLineEdit
+)
+
 from PySide6.QtCore import QObject, QThread, Slot, Qt, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QIcon
 from ...models import (
     FolderContents, FileListWidgetData, DownloadStartedState,
     UploadStartedState, GenericSuccess
 )
 from ...ui.rename_file_dialog import Ui_RenameFileDialog
+from ...ui.rename_folder_dialog import Ui_RenameFolderDialog
 from ...ui.files_download_manager import Ui_FilesDownloadManagerDialog
 from ...workers import WorkerThread
 
@@ -46,7 +52,12 @@ class FilesTabController(QObject):
         self.rename_ctrl = RenameController(self)
         self.download_ctrl = DownloadController(self)
 
+        self.create_folder_ctrl = CreateFolderController(self)
+        self.delete_folder_ctrl = DeleteFolderController(self)
+
+        self.rename_folder_ctrl = RenameFolderController(self)
         self.download_manager_dialog = FilesDownloadManagerDialog(self)
+
         self.setup_slots()
 
     def setup_slots(self):
@@ -59,13 +70,21 @@ class FilesTabController(QObject):
 
         # Controller slots
         self.upload_ctrl.uploadComplete.connect(self.slot_callbacks.file_upload_complete)
-        self.delete_ctrl.deleteComplete.connect(self.slot_callbacks.file_upload_complete)
+        self.delete_ctrl.deleteComplete.connect(self.slot_callbacks.file_delete_complete)
 
         self.rename_ctrl.renameComplete.connect(self.slot_callbacks.file_rename_complete)
         self.download_ctrl.downloadComplete.connect(self.slot_callbacks.file_download_complete)
 
         self.upload_ctrl.uploadStarted.connect(self.slot_callbacks.file_upload_started)
         self.download_ctrl.downloadStarted.connect(self.slot_callbacks.file_download_started)
+
+        self.create_folder_ctrl.createComplete.connect(self.slot_callbacks.folder_create_complete)
+        self.delete_folder_ctrl.deleteComplete.connect(self.slot_callbacks.folder_delete_complete)
+
+        self.rename_folder_ctrl.renameComplete.connect(self.slot_callbacks.folder_rename_complete)
+        self.app_parent.signals.trashbin_new_restore.connect(
+            lambda: self.update_folder_listing(self.current_folder)
+        )
 
     @Slot(Exception)
     def on_worker_exc(self, exc: Exception):
@@ -95,12 +114,19 @@ class FilesTabController(QObject):
         """Custom context menu for list widget."""
         context = QMenu(self.mw_parent)
 
-        create_action = QAction("Upload file", self)
+        list_add_icon = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.ListAdd))
+        folder_new_icon = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.FolderNew))
+
+        create_action = QAction("Upload file", self, icon=list_add_icon)
         create_action.triggered.connect(self.upload_ctrl.upload_file_triggered)
 
-        context.addAction(create_action)
-        current_item = self.ui.fileListWidget.itemAt(pos)
+        create_folder_action = QAction("Create folder", self, icon=folder_new_icon)
+        create_folder_action.triggered.connect(self.create_folder_ctrl.create_folder_triggered)
 
+        context.addAction(create_action)
+        context.addAction(create_folder_action)
+
+        current_item = self.ui.fileListWidget.itemAt(pos)
         if current_item is not None:
             delete_action: QAction | None = self.context_menu_actions.file_delete_action(current_item)
             if delete_action:
@@ -114,6 +140,14 @@ class FilesTabController(QObject):
             if download_action:
                 context.addAction(download_action)
         
+            delete_folder_action: QAction | None = self.context_menu_actions.folder_delete_action(current_item)
+            if delete_folder_action:
+                context.addAction(delete_folder_action)
+            
+            rename_folder_action: QAction | None = self.context_menu_actions.folder_rename_action(current_item)
+            if rename_folder_action:
+                context.addAction(rename_folder_action)
+
         context.exec(self.ui.fileListWidget.mapToGlobal(pos))
 
     def update_root_listing(self):
@@ -207,6 +241,8 @@ class SlotCallbacks(QObject):
     @Slot(str, GenericSuccess)
     def file_delete_complete(self, random_id: str, data: GenericSuccess):
         self.ctrl_parent.update_folder_listing(self.ctrl_parent.current_folder)
+        self.ctrl_parent.app_parent.signals.files_new_delete.emit()
+
         self.ui.statusbar.showMessage(
             "Files - Delete complete",
             timeout=5000
@@ -238,6 +274,34 @@ class SlotCallbacks(QObject):
             timeout=5000
         )
 
+    @Slot(str, GenericSuccess)
+    def folder_create_complete(self, random_id: str, data: GenericSuccess):
+        self.ctrl_parent.update_folder_listing(self.ctrl_parent.current_folder)
+        self.ui.statusbar.showMessage(
+            "Folders - Create complete",
+            timeout=5000
+        )
+
+    @Slot(str, GenericSuccess)
+    def folder_delete_complete(self, random_id: str, data: GenericSuccess):
+        self.ctrl_parent.update_folder_listing(self.ctrl_parent.current_folder)
+        self.ctrl_parent.app_parent.signals.files_new_delete.emit()
+
+        self.ui.statusbar.showMessage(
+            "Folders - Delete complete",
+            timeout=5000
+        )
+
+    @Slot(str, GenericSuccess)
+    def folder_rename_complete(self, random_id: str, data: GenericSuccess):
+        self.ctrl_parent.update_folder_listing(self.ctrl_parent.current_folder)
+        self.ctrl_parent.app_parent.signals.files_new_delete.emit()
+
+        self.ui.statusbar.showMessage(
+            "Folders - Rename complete",
+            timeout=5000
+        )
+    
     @Slot(FolderContents)
     def update_list_widget(self, data: FolderContents):
         self.ui.fileListWidget.clear()
@@ -284,7 +348,7 @@ class SlotCallbacks(QObject):
             f"Files - Updated folder listing for '{str(data.folder_path)}'",
             timeout=5000
         )
-
+        
         self.ctrl_parent.current_folder_contents = data
         self.ctrl_parent.current_folder = data.folder_path
 
@@ -319,9 +383,13 @@ class CreateContextMenuActions(QObject):
         if item_data.data_type == 'folder':
             return None
         
-        delete_action = QAction("Delete Selected File", self)
-        delete_action.triggered.connect(on_delete_action)
+        icon = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.EditDelete))
+        delete_action = QAction(
+            "Delete Selected File", 
+            self, icon=icon
+        )
 
+        delete_action.triggered.connect(on_delete_action)
         return delete_action
 
     def file_rename_action(self, item: QListWidgetItem) -> QAction | None:
@@ -341,9 +409,10 @@ class CreateContextMenuActions(QObject):
         if item_data.data_type == 'folder':
             return None
         
-        rename_action = QAction("Rename Selected File", self)
-        rename_action.triggered.connect(on_rename_action)
+        icon = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.EditSelectAll))
+        rename_action = QAction("Rename Selected File", self, icon=icon)
 
+        rename_action.triggered.connect(on_rename_action)
         return rename_action
 
     def file_download_action(self, item: QListWidgetItem) -> QAction | None:
@@ -356,10 +425,63 @@ class CreateContextMenuActions(QObject):
         if item_data.data_type == 'folder':
             return None
         
-        download_action = QAction("Download Selected File", self)
-        download_action.triggered.connect(on_download_action)
+        icon = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.DocumentSave))
+        download_action = QAction("Download Selected File", self, icon=icon)
 
-        return download_action        
+        download_action.triggered.connect(on_download_action)
+        return download_action     
+
+    def folder_delete_action(self, item: QListWidgetItem) -> QAction | None:
+        item_data: FileListWidgetData = item.data(Qt.ItemDataRole.UserRole)
+
+        @Slot()
+        def on_delete_folder_action():
+            btn = QMessageBox.question(
+                self.mw_parent,
+                'syncServer - Client',
+                (
+                    f"Are you sure you want to delete the folder '{item_data.path}'?"
+                    " This will remove all files and folders permanently!"
+                ),
+                buttons=QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                defaultButton=QMessageBox.StandardButton.No
+            )
+            if btn == QMessageBox.StandardButton.No:
+                return
+            
+            self.ctrl_parent.delete_folder_ctrl.delete_folder_triggered(item_data.path)
+        
+        if item_data.data_type == 'file':
+            return None
+        
+        icon = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.EditDelete))
+        delete_folder_action = QAction("Delete Selected Folder", self, icon=icon)
+
+        delete_folder_action.triggered.connect(on_delete_folder_action)
+        return delete_folder_action
+
+    def folder_rename_action(self, item: QListWidgetItem) -> QAction | None:
+        item_data: FileListWidgetData = item.data(Qt.ItemDataRole.UserRole)
+
+        @Slot()
+        def on_rename_folder_action():
+            self.rename_folder_dialog = RenameFolderDialog(self, item_data.path)
+            self.rename_folder_dialog.dataComplete.connect(call_rename_triggered)
+
+            self.rename_folder_dialog.exec()
+        
+        @Slot(PurePosixPath)
+        def call_rename_triggered(new_path: PurePosixPath):
+            self.ctrl_parent.rename_folder_ctrl.rename_folder_triggered(item_data.path, new_path)
+        
+        if item_data.data_type == 'file':
+            return None
+        
+        icon = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.EditSelectAll))
+        rename_folder_action = QAction("Rename Selected Folder", self, icon=icon)
+
+        rename_folder_action.triggered.connect(on_rename_folder_action)
+        return rename_folder_action
 
 
 class UploadController(QObject):
@@ -637,6 +759,156 @@ class DownloadController(QObject):
         self.file_downloads.pop(random_id, None)
 
 
+class CreateFolderController(QObject):
+    createComplete = Signal(str, GenericSuccess)
+
+    def __init__(self, ctrl_parent: FilesTabController):
+        super().__init__(ctrl_parent.app_parent)
+
+        self.mw_parent = ctrl_parent.mw_parent
+        self.ctrl_parent = ctrl_parent
+
+        self.main_client = ctrl_parent.main_client
+
+        self.ui = ctrl_parent.ui
+        self.folder_creates: dict[str, list[WorkerThread, QThread]] = {}
+    
+    def create_folder_triggered(self):
+        folder_name, ok = QInputDialog.getText(
+            self.mw_parent, 'syncServer - Client',
+            'Enter a folder name:', QLineEdit.EchoMode.Normal
+        )
+
+        if not ok and not folder_name:
+            return
+        
+        # Copy current state
+        current_folder = PurePosixPath(str(self.ctrl_parent.current_folder))
+        folder_path = current_folder / folder_name
+
+        random_id = secrets.token_hex(16)
+        func = partial(self.main_client.folders.create_folder, folder_path)
+        
+        create_folder_worker = WorkerThread(func)
+        create_folder_thread = QThread(self)
+        
+        create_folder_worker.moveToThread(create_folder_thread)
+        
+        create_folder_worker.dataReady.connect(
+            lambda data, random_id=random_id: self.create_complete(data, random_id)
+        )
+        create_folder_worker.excReceived.connect(self.ctrl_parent.on_worker_exc)
+        
+        create_folder_thread.started.connect(create_folder_worker.run)
+        create_folder_worker.dataReady.connect(create_folder_thread.quit)
+
+        create_folder_worker.excReceived.connect(create_folder_thread.quit)
+        create_folder_thread.start()
+
+        self.folder_creates[random_id] = [create_folder_worker, create_folder_thread]
+        self.ui.statusbar.showMessage(
+            f"Folders - Creating folder '{folder_path}'",
+            timeout=5000
+        )
+
+    def create_complete(self, data: GenericSuccess, random_id: str):
+        self.createComplete.emit(data, random_id)
+        self.folder_creates.pop(random_id, None)
+
+
+class DeleteFolderController(QObject):
+    deleteComplete = Signal(str, GenericSuccess)
+
+    def __init__(self, ctrl_parent: FilesTabController):
+        super().__init__(ctrl_parent.app_parent)
+
+        self.mw_parent = ctrl_parent.mw_parent
+        self.ctrl_parent = ctrl_parent
+
+        self.main_client = ctrl_parent.main_client
+
+        self.ui = ctrl_parent.ui
+        self.folder_deletes: dict[str, list[WorkerThread, QThread]] = {}
+
+    def delete_folder_triggered(self, folder_path: PurePosixPath):
+        random_id = secrets.token_hex(16)
+        func = partial(self.main_client.folders.delete_folder, folder_path)
+        
+        delete_folder_worker = WorkerThread(func)
+        delete_folder_thread = QThread(self)
+        
+        delete_folder_worker.moveToThread(delete_folder_thread)
+        
+        delete_folder_worker.dataReady.connect(
+            lambda data, random_id=random_id: self.delete_complete(data, random_id)
+        )
+        delete_folder_worker.excReceived.connect(self.ctrl_parent.on_worker_exc)
+        
+        delete_folder_thread.started.connect(delete_folder_worker.run)
+        delete_folder_worker.dataReady.connect(delete_folder_thread.quit)
+
+        delete_folder_worker.excReceived.connect(delete_folder_thread.quit)
+        delete_folder_thread.start()
+
+        self.folder_deletes[random_id] = [delete_folder_worker, delete_folder_thread]
+        self.ui.statusbar.showMessage(
+            f"Folders - Deleting folder '{folder_path}'",
+            timeout=5000
+        )
+
+    def delete_complete(self, data: GenericSuccess, random_id: str):
+        self.deleteComplete.emit(data, random_id)
+        self.folder_deletes.pop(random_id, None)
+
+
+class RenameFolderController(QObject):
+    renameComplete = Signal(str, GenericSuccess)
+
+    def __init__(self, ctrl_parent: FilesTabController):
+        super().__init__(ctrl_parent.app_parent)
+
+        self.mw_parent = ctrl_parent.mw_parent
+        self.ctrl_parent = ctrl_parent
+
+        self.main_client = ctrl_parent.main_client
+
+        self.ui = ctrl_parent.ui
+        self.folder_renames: dict[str, list[WorkerThread, QThread]] = {}
+
+    def rename_folder_triggered(self, old_path: PurePosixPath, new_path: PurePosixPath):
+        random_id = secrets.token_hex(16)
+        func = partial(
+            self.main_client.folders.rename_folder, 
+            old_path, new_path.name
+        )
+        
+        rename_folder_worker = WorkerThread(func)
+        rename_folder_thread = QThread(self)
+        
+        rename_folder_worker.moveToThread(rename_folder_thread)
+        
+        rename_folder_worker.dataReady.connect(
+            lambda data, random_id=random_id: self.rename_complete(data, random_id)
+        )
+        rename_folder_worker.excReceived.connect(self.ctrl_parent.on_worker_exc)
+        
+        rename_folder_thread.started.connect(rename_folder_worker.run)
+        rename_folder_worker.dataReady.connect(rename_folder_thread.quit)
+
+        rename_folder_worker.excReceived.connect(rename_folder_thread.quit)
+        rename_folder_thread.start()
+
+        self.folder_renames[random_id] = [rename_folder_worker, rename_folder_thread]
+        self.ui.statusbar.showMessage(
+            f"Folders - Renaming folder '{old_path}' to '{new_path}'",
+            timeout=5000
+        )
+
+    def rename_complete(self, data: GenericSuccess, random_id: str):
+        self.renameComplete.emit(data, random_id)
+        self.folder_renames.pop(random_id, None)
+
+
 class RenameFileDialog(QDialog):
     dataComplete = Signal(PurePosixPath)
 
@@ -684,6 +956,62 @@ class RenameFileDialog(QDialog):
                 self.mw_parent,
                 'syncServer - Client',
                 "New file path is the same as the old path, check the name and try again.",
+                buttons=QMessageBox.StandardButton.Ok,
+                defaultButton=QMessageBox.StandardButton.Ok
+            )
+            return
+        
+        self.dataComplete.emit(posix_new_path)
+        return super().accept()
+
+
+class RenameFolderDialog(QDialog):
+    dataComplete = Signal(PurePosixPath)
+
+    def __init__(self, ctrl_parent: FilesTabController, old_path: PurePosixPath):
+        super().__init__(ctrl_parent.mw_parent)
+
+        self.mw_parent = ctrl_parent.mw_parent
+        self.ctrl_parent = ctrl_parent
+
+        self.main_client = ctrl_parent.main_client
+        self.ui = Ui_RenameFolderDialog()    
+
+        self.ui.setupUi(self)
+
+        self.old_path = old_path
+        self.ui.oldFolderNameLineEdit.setText(str(old_path))
+
+        self.ui.newFolderNameLineEdit.setText(str(old_path))
+
+    def accept(self):
+        new_path = self.ui.newFolderNameLineEdit.text()
+        if not new_path:
+            QMessageBox.warning(
+                self.mw_parent,
+                'syncServer - Client',
+                "Enter a valid path and try again.",
+                buttons=QMessageBox.StandardButton.Ok,
+                defaultButton=QMessageBox.StandardButton.Ok
+            )
+            return
+        
+        posix_new_path = PurePosixPath(new_path)
+        if posix_new_path.parent != self.old_path.parent:
+            QMessageBox.warning(
+                self.mw_parent,
+                'syncServer - Client',
+                "New folder path is not relative to old path, make sure the folder is the same.",
+                buttons=QMessageBox.StandardButton.Ok,
+                defaultButton=QMessageBox.StandardButton.Ok
+            )
+            return
+        
+        if posix_new_path == self.old_path:
+            QMessageBox.warning(
+                self.mw_parent,
+                'syncServer - Client',
+                "New folder path is the same as the old path, check the name and try again.",
                 buttons=QMessageBox.StandardButton.Ok,
                 defaultButton=QMessageBox.StandardButton.Ok
             )

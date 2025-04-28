@@ -9,7 +9,8 @@ from pydantic import TypeAdapter
 
 from .models import (
     APIKeyCreate, AccessTokenResponse, AccessTokenError, 
-    APIKeyInfo, FolderContents, GenericSuccess
+    APIKeyInfo, FolderContents, GenericSuccess,
+    DeletedFilesGet
 )
 
 
@@ -129,6 +130,8 @@ class FilesInterface:
     def __init__(self, parent: MainClient):
         self.parent = parent
         self.client = parent.client
+
+        self.deleted = DeletedFilesInterface(self, parent)
 
     def make_url(self, folder: str, filename: str) -> str:
         """Make the URL where the file (and optionally folder) points to.
@@ -288,6 +291,15 @@ class FolderInterface:
         self.parent = parent
         self.client = parent.client
     
+    def make_url(self, path: PurePosixPath):
+        if path.parts[0] == '/':
+            folder_path = '/'.join(path.parts[1:])  # remove root '/'
+        else:
+            folder_path = str(path)
+        
+        url: str = f'/api/folders/{folder_path}'
+        return url
+    
     def list_root_folder(self) -> FolderContents:
         try:
             res = self.client.get('/api/folders/')
@@ -311,13 +323,10 @@ class FolderInterface:
         return model
     
     def list_folder_contents(self, path: PurePosixPath):
-        if path.parts[0] == '/':
-            file_path = '/'.join(path.parts[1:])  # remove root '/'
-        else:
-            file_path = str(path)
+        url: str = self.make_url(path)
         
         try:
-            res = self.client.get(f'/api/folders/{file_path}')
+            res = self.client.get(url)
             res.raise_for_status()
 
             res_json: dict = res.json()
@@ -337,7 +346,212 @@ class FolderInterface:
         model = FolderContents(**res_json)
         return model
 
+    def create_folder(self, path: PurePosixPath):
+        url: str = self.make_url(path)
+        try:
+            res = self.client.post(url)
+            res.raise_for_status()
 
+            res_json: dict = res.json()
+            res_model: GenericSuccess = GenericSuccess(**res_json)
+        except httpx.HTTPStatusError as exc:
+            logger.exception("HTTP Status Error, HTTP %d:", exc.response.status_code)
+            raise
+        except httpx.HTTPError:
+            logger.exception("Generic HTTP Error:")
+            raise
+        except json.JSONDecodeError:
+            logger.exception("Expected JSON data, but received this: [%s]", res.text)
+            raise
+        except Exception:
+            logger.critical("Unexpected error during request:", exc_info=True)
+            raise
+
+        return res_model
+    
+    def delete_folder(self, path: PurePosixPath):
+        url: str = self.make_url(path)
+
+        try:
+            res = self.client.delete(url)
+            res.raise_for_status()
+
+            res_json: dict = res.json()
+            res_model: GenericSuccess = GenericSuccess(**res_json)
+        except httpx.HTTPStatusError as exc:
+            logger.exception("HTTP Status Error, HTTP %d:", exc.response.status_code)
+            raise
+        except httpx.HTTPError:
+            logger.exception("Generic HTTP Error:")
+            raise
+        except json.JSONDecodeError:
+            logger.exception("Expected JSON data, but received this: [%s]", res.text)
+            raise
+        except Exception:
+            logger.critical("Unexpected error during request:", exc_info=True)
+            raise
+
+        return res_model
+    
+    def rename_folder(self, old_path: PurePosixPath, new_name: str):
+        url: str = self.make_url(old_path)
+
+        try:
+            data = {"new_name": new_name}
+
+            res = self.client.put(url, json=data)
+            res.raise_for_status()
+
+            res_json: dict = res.json()
+            res_model: GenericSuccess = GenericSuccess(**res_json)
+        except httpx.HTTPStatusError as exc:
+            logger.exception("HTTP Status Error, HTTP %d:", exc.response.status_code)
+            raise
+        except httpx.HTTPError:
+            logger.exception("Generic HTTP Error:")
+            raise
+        except json.JSONDecodeError:
+            logger.exception("Expected JSON data, but received this: [%s]", res.text)
+            raise
+        except Exception:
+            logger.critical("Unexpected error during request:", exc_info=True)
+            raise
+
+        return res_model
+
+
+class DeletedFilesInterface:
+    def __init__(self, parent: FilesInterface, main_parent: MainClient):
+        self.parent = parent
+        self.main_parent = main_parent
+
+        self.client = main_parent.client
+    
+    def list_files_with_deletes(self) -> list[PurePosixPath]:
+        try:
+            res = self.client.get('/api/files/deleted/')
+            res.raise_for_status()
+
+            res_json: dict = res.json()
+        except httpx.HTTPStatusError as exc:
+            logger.exception("HTTP Status Error, HTTP %d:", exc.response.status_code)
+            raise
+        except httpx.HTTPError:
+            logger.exception("Generic HTTP Error:")
+            raise
+        except json.JSONDecodeError:
+            logger.exception("Expected JSON data, but received this: [%s]", res.text)
+            raise
+        except Exception:
+            logger.critical("Unexpected error during request:", exc_info=True)
+            raise
+
+        ta = TypeAdapter(list[PurePosixPath])
+        paths = ta.validate_python(res_json)
+        
+        return paths
+    
+    def empty_trashbin(self):
+        try:
+            res = self.client.delete('/api/files/deleted/')
+            res.raise_for_status()
+
+            res_json: dict = res.json()
+            res_model = GenericSuccess(**res_json)
+        except httpx.HTTPStatusError as exc:
+            logger.exception("HTTP Status Error, HTTP %d:", exc.response.status_code)
+            raise
+        except httpx.HTTPError:
+            logger.exception("Generic HTTP Error:")
+            raise
+        except json.JSONDecodeError:
+            logger.exception("Expected JSON data, but received this: [%s]", res.text)
+            raise
+        except Exception:
+            logger.critical("Unexpected error during request:", exc_info=True)
+            raise
+
+        return res_model
+
+    def show_deleted_versions(self, path: PurePosixPath) -> list[DeletedFilesGet]:
+        try:
+            res = self.client.get(f'/api/files/deleted{path}')
+            res.raise_for_status()
+
+            res_json: dict = res.json()
+        except httpx.HTTPStatusError as exc:
+            logger.exception("HTTP Status Error, HTTP %d:", exc.response.status_code)
+            raise
+        except httpx.HTTPError:
+            logger.exception("Generic HTTP Error:")
+            raise
+        except json.JSONDecodeError:
+            logger.exception("Expected JSON data, but received this: [%s]", res.text)
+            raise
+        except Exception:
+            logger.critical("Unexpected error during request:", exc_info=True)
+            raise
+
+        ta = TypeAdapter(list[DeletedFilesGet])
+        models = ta.validate_python(res_json)
+
+        return models
+    
+    def delete_file_version(
+        self, path: PurePosixPath, 
+        offset: int = 0, delete_all: bool = False
+    ) -> GenericSuccess:
+        try:
+            params = {'offset': offset, 'delete_all': delete_all}
+
+            res = self.client.delete(f'/api/files/deleted{path}', params=params)
+            res.raise_for_status()
+
+            res_json: dict = res.json()
+            res_model = GenericSuccess(**res_json)
+        except httpx.HTTPStatusError as exc:
+            logger.exception("HTTP Status Error, HTTP %d:", exc.response.status_code)
+            raise
+        except httpx.HTTPError:
+            logger.exception("Generic HTTP Error:")
+            raise
+        except json.JSONDecodeError:
+            logger.exception("Expected JSON data, but received this: [%s]", res.text)
+            raise
+        except Exception:
+            logger.critical("Unexpected error during request:", exc_info=True)
+            raise
+
+        return res_model
+    
+    def restore_file_version(
+        self, path: PurePosixPath, 
+        offset: int = 0
+    ) -> GenericSuccess:
+        try:
+            data = {'offset': offset}
+
+            res = self.client.put(f'/api/files/deleted{path}', json=data)
+            res.raise_for_status()
+
+            res_json: dict = res.json()
+            res_model = GenericSuccess(**res_json)
+        except httpx.HTTPStatusError as exc:
+            logger.exception("HTTP Status Error, HTTP %d:", exc.response.status_code)
+            raise
+        except httpx.HTTPError:
+            logger.exception("Generic HTTP Error:")
+            raise
+        except json.JSONDecodeError:
+            logger.exception("Expected JSON data, but received this: [%s]", res.text)
+            raise
+        except Exception:
+            logger.critical("Unexpected error during request:", exc_info=True)
+            raise
+
+        return res_model
+       
+    
 class APIKeyInterface:
     def __init__(self, parent: MainClient):
         self.parent = parent

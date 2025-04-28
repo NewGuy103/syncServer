@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QMenu, QListWidgetItem, QDialog
 )
 from PySide6.QtCore import QObject, QThread, Signal, Slot, Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QIcon
 from ...ui.create_apikey_dialog import Ui_CreateAPIKeyDialog
 from ...ui.create_apikey_success_dialog import Ui_CreateAPIKeySuccess
 from ...models import APIKeyInfo, GenericSuccess, APIKeyCreate
@@ -61,14 +61,18 @@ class APIKeysTabController(QObject):
         """Custom context menu for list widget."""
         context = QMenu(self.mw_parent)
 
-        create_action = QAction("Create API Key", self)
+        icon = QIcon(QIcon.fromTheme(QIcon.ThemeIcon. ListAdd))
+
+        create_action = QAction("Create API Key", self, icon=icon)
         create_action.triggered.connect(self.create_apikey_triggered)
 
         context.addAction(create_action)
         current_item = self.ui.apiKeyListWidget.itemAt(pos)
 
         if current_item is not None:
-            delete_action = QAction("Delete Selected Key", self)
+            delete_icon = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.ListRemove))
+
+            delete_action = QAction("Delete Selected Key", self, icon=delete_icon)
             delete_action.triggered.connect(self.delete_action_triggered)
             
             item_data: APIKeyInfo = current_item.data(Qt.ItemDataRole.UserRole)
