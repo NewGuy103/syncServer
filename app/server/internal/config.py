@@ -44,6 +44,7 @@ class AppSettings(BaseSettings):
     FIRST_USER_NAME: str = 'admin'
     FIRST_USER_PASSWORD: str = 'helloworld'
 
+    USE_VALKEY_CACHE: bool = True
     VALKEY_URI: MultiHostUrl = MultiHostUrl.build(
         scheme="valkey",
         username='',

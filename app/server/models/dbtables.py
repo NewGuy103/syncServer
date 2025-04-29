@@ -34,23 +34,23 @@ class Users(UserBase, table=True):
     sessions: list['UserSessions'] = Relationship(
         back_populates='user', 
         sa_relationship_kwargs={'lazy': 'selectin'},
-        cascade_delete=True
+        passive_deletes='all'
     )
     api_keys: list['UserAPIKeys'] = Relationship(
         back_populates='user', 
         sa_relationship_kwargs={'lazy': 'selectin'},
-        cascade_delete=True
+        passive_deletes='all'
     )
 
     files: list['Files'] = Relationship(
         back_populates='user', 
         sa_relationship_kwargs={'lazy': 'selectin'},
-        cascade_delete=True
+        passive_deletes='all'
     )
     folders: list['Folders'] = Relationship(
         back_populates='user', 
         sa_relationship_kwargs={'lazy': 'selectin'},
-        cascade_delete=True
+        passive_deletes='all'
     )
 
 
@@ -105,14 +105,14 @@ class Folders(SQLModel, table=True):
     child_folders: list['Folders'] = Relationship(
         back_populates='parent_folder',
         sa_relationship_kwargs={'lazy': 'selectin'},
-        cascade_delete=True
+        passive_deletes='all'
     )
 
     user: Users = Relationship(back_populates='folders', sa_relationship_kwargs={'lazy': 'selectin'})
     files: list['Files'] = Relationship(
         back_populates='folder', 
         sa_relationship_kwargs={'lazy': 'selectin'},
-        cascade_delete=True
+        passive_deletes='all'
     )
 
 

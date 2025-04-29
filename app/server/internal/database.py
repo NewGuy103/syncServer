@@ -8,6 +8,8 @@ import uuid
 import aiofiles
 import aiofiles.os
 
+import valkey.asyncio as valkey
+
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,8 +22,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from cryptography.hazmat.primitives import hashes
 
 from .config import settings, data_directories
+from .cache import cache
 from .constants import DBReturnValues
-from .cache import v
 
 from ..models.common import UserInfo
 from ..models.auth import APIKeyInfo
@@ -56,11 +58,12 @@ class MainDatabase:
     """
     def __init__(self, async_engine: 'AsyncEngine'):
         self.async_engine: 'AsyncEngine' = async_engine
+        self.valkey: valkey.Valkey = None
     
     def override_engine(self, async_engine: 'AsyncEngine'):
         self.async_engine: 'AsyncEngine' = async_engine
     
-    async def setup(self):
+    async def setup(self, valkey_client: valkey.Valkey | None):
         """Sets up the database and runs first-run checks.
         
         This must be called first before using the child methods.
@@ -69,6 +72,7 @@ class MainDatabase:
             # await conn.run_sync(SQLModel.metadata.drop_all)
             await conn.run_sync(SQLModel.metadata.create_all)
     
+        self.valkey: valkey.Valkey | None = valkey_client
         self.users = UserMethods(self)
         
         self.sessions = SessionMethods(self)
@@ -109,6 +113,8 @@ class UserMethods:
     def __init__(self, parent: MainDatabase):
         self.parent = parent
         self.async_engine = parent.async_engine
+
+        self.valkey = parent.valkey
     
     async def add_user(self, session: AsyncSession, username: str, password: str):
         if not isinstance(username, str):
@@ -206,6 +212,8 @@ class SessionMethods:
         self.parent = parent
         self.async_engine = parent.async_engine
 
+        self.valkey = parent.valkey
+
     async def create_session_token(self, session: AsyncSession, username: str, expiry_date: datetime) -> str:
         if not isinstance(username, str):
             raise TypeError("username is not a string")
@@ -287,10 +295,11 @@ class FileMethods:
         self.parent = parent
         self.async_engine = parent.async_engine
 
+        self.valkey = parent.valkey
         self.deleted_files = DeletedFileMethods(parent, self)
 
     def file_lock(self, file_path: Path):
-        """Get a file lock from Valkey.
+        """Get a file lock from Valkey or a local asyncio lock.
         
         This is defined to allow different implementations of locks
         that aren't strictly Valkey.
@@ -300,7 +309,8 @@ class FileMethods:
         """
 
         filelock_name = f"filelock:{str(file_path)}"
-        lock = v.lock(filelock_name, blocking=True)
+        lock = cache.lock(filelock_name)
+
         return lock
     
     async def lookup_database_for_file(self, session: AsyncSession, username: str, file_path: Path):
@@ -345,7 +355,11 @@ class FileMethods:
         """
 
         # Valkey returns bytes, this did not have to take 3 days to debug
-        changed_parent: bytes = await v.get(f"renamelog:{file_path.parent}")
+        if self.valkey is None:
+            changed_parent: bytes = await cache.get(f'renamelog:{file_path.parent}')
+        else:
+            changed_parent: bytes = await self.valkey.get(f"renamelog:{file_path.parent}")
+        
         if changed_parent and not file_path.parent.exists():
             decoded_bytes: str = changed_parent.decode('utf-8')
             renamed_parent = Path(decoded_bytes)
@@ -659,6 +673,8 @@ class DeletedFileMethods:
         self.maindb = maindb
         self.async_engine = maindb.async_engine
 
+        self.valkey = parent.valkey
+
     def delete_lock(self, file_path: Path):
         """Get a delete lock from Valkey.
         
@@ -670,7 +686,8 @@ class DeletedFileMethods:
         """
 
         deletelock_name = f"deletelock:{str(file_path)}"
-        lock = v.lock(deletelock_name, blocking=True)
+        lock = cache.lock(deletelock_name)
+
         return lock
     
     async def lookup_deleted_exists(self, session: AsyncSession, username: str, file_path: Path):
@@ -694,7 +711,7 @@ class DeletedFileMethods:
     async def show_deleted_versions(
         self, session: AsyncSession, 
         username: str, file_path: Path,
-        amount: int = 100
+        amount: int = 100, offset: int = 0
     ) -> list[DeletedFilesGet]:
         user: Users | None = await self.maindb.get_user(session, username)
         if not user:
@@ -716,7 +733,10 @@ class DeletedFileMethods:
                 Files.file_path == str(file_path),
                 Files.user_id == user.user_id,
                 Files.delete_entry != null(),
-            ).order_by(desc(DeletedFiles.deleted_on)).limit(amount)
+            )
+            .order_by(desc(DeletedFiles.deleted_on))
+            .limit(amount)
+            .offset(offset)
         )
 
         delete_data: list = []
@@ -945,6 +965,7 @@ class APIKeyMethods:
         self.parent = parent
         self.async_engine = parent.async_engine
 
+        self.valkey = parent.valkey
         self.allowed_permissions: list[str] = ['create', 'read', 'update', 'delete']
 
     def hash_key(self, api_key: str) -> str:
@@ -1107,6 +1128,8 @@ class FolderMethods:
         self.parent = parent
         self.async_engine = parent.async_engine
 
+        self.valkey = parent.valkey
+
     def folder_lock(self, folder_path: Path):
         """Get a folder lock from Valkey.
         
@@ -1118,7 +1141,8 @@ class FolderMethods:
         """
 
         folderlock = f"folderlock:{str(folder_path)}"
-        lock = v.lock(folderlock, blocking=True)
+        lock = cache.lock(folderlock)
+
         return lock
     
     async def get_folder(self, session: AsyncSession, username: str, folder_path: Path):
@@ -1322,7 +1346,11 @@ class FolderMethods:
             logger.debug("Changed name of old folder %s to new folder %s", folder_path, new_path)
 
             folder_path.rename(new_path)
-            await v.set(f"renamelog:{folder_path}", str(new_path), ex=3600)
+            if self.valkey is None:
+                encoded_path = str(new_path).encode('utf-8')
+                await cache.set(f'renamelog:{folder_path}', encoded_path)
+            else:
+                await self.valkey.set(f"renamelog:{folder_path}", str(new_path), ex=3600)
 
             logger.debug("Set cache renamelog:%s to '%s'", folder_path, new_path)
 

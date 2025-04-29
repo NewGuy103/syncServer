@@ -9,7 +9,7 @@ from ..version import __version__
 from .internal.database import database
 from .internal.config import log_conf
 from .internal.ospaths import make_data_dirs
-from .internal.cache import v
+from .internal.cache import cache
 from .routers import main
 
 
@@ -24,14 +24,17 @@ async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:
     await log_conf.setup_logging()
     logger: logging.Logger = logging.getLogger("syncserver")
 
+    v = await cache.setup()
+
     try:
-        await database.setup()
+        await database.setup(v)
     except Exception:
         logger.critical("Database startup failed:", exc_info=True)
         raise
 
     try:
-        await v.ping()
+        if v is not None:
+            await v.ping()
     except Exception:
         logger.critical("Could not ping Valkey server:", exc_info=True)
         raise
@@ -46,7 +49,8 @@ async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:
         raise
 
     try:
-        await v.aclose()
+        if v is not None:
+            await v.aclose()
     except Exception:
         logger.critical("Could not close Valkey client connection:", exc_info=True)
         raise

@@ -34,8 +34,10 @@ async def retrieve_deleted_file_versions(
     user: UserAuthDep, logger: LoggerDep,
     
     api_key: KeyPermRead,
-    amount: PositiveInt = 100
+    amount: PositiveInt = 100,
+    offset: NonNegativeInt = 0
 ) -> list[DeletedFilesGet]:
+    """Returns an ordered list with newest entry first and oldest entry last."""
     user_datadir: Path = ospaths.get_user_datadir(user.username)
     unsanitized_path: Path = user_datadir / file_path
 
@@ -53,7 +55,8 @@ async def retrieve_deleted_file_versions(
     
     res = await database.files.deleted_files.show_deleted_versions(
         session, user.username, 
-        os_filepath, amount
+        os_filepath, amount=amount, 
+        offset=offset
     )
     return res
 
@@ -74,7 +77,8 @@ async def delete_file_versions(
     file_path: str, session: SessionDep,
     user: UserAuthDep, logger: LoggerDep,
     api_key: KeyPermDelete,
-    offset: NonNegativeInt = 0, delete_all: bool = False
+    offset: NonNegativeInt = 0,
+    delete_all: bool = False
 ) -> GenericSuccess:
     """Remove versions of a deleted file.
     
