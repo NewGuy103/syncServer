@@ -29,6 +29,6 @@ jobs:
         uses: pavelzw/pytest-action@v2
         with:
           emoji: true
-          verbose: false
+          verbose: true
           job-summary: true
           custom-pytest: source .venv/bin/activate && ./scripts/tests.sh

@@ -33,6 +33,8 @@ dev = [
     "aiosqlite>=0.21.0",
     "grip>=4.6.2",
     "pytest>=8.3.5",
+    "pytest-emoji>=0.2.0",
+    "pytest-md>=0.2.0",
 ]
 
 [tool.setuptools]
