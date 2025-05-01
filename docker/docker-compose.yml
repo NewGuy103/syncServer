@@ -29,6 +29,7 @@ services:
       - POSTGRES_USER=syncserver
       - POSTGRES_PASSWORD=helloworld
       - VALKEY_URI=valkey://valkey:6379
+      - USE_VALKEY_CACHE=true
+      - ENVIRONMENT=prod
     ports:
       - 8000:8000
-

@@ -1,4 +1,4 @@
-site_name: newguy103-syncserver
+site_name: NewGuy103 - syncServer
 site_author: NewGuy103
 copyright: "© NewGuy103, 2025."
 repo_url: https://github.com/newguy103/syncserver
@@ -39,9 +39,6 @@ markdown_extensions:
 
 nav:
   - Home: 'index.md'
-  - Client:
-    - 'Client Interface': 'client-interface.md'
-    - 'User Interface': 'gui-interface.md'
   - Server:
-    - 'API Documentation': 'api-overview.md'
-    - Database: 'server-db.md'
+    - 'App Overview': 'app-overview.md'
+    - 'Database Component': 'database-component.md'

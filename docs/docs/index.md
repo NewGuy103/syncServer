@@ -1,18 +1,21 @@
-# Welcome to the `newguy103-syncserver` documentation
+# Welcome to the newguy103-syncserver documentation
 
-**newguy103-syncserver** is a Python package designed to simplify file synchronization operations through a server-client architecture. The package provides both the server, built on FastAPI, and a client module for interacting with the server.
-
-Note from me: This is just a hobby project, and not supposed to be a production application. It's just a way to improve my skills and have something to work on.
+A simple file storage server with FastAPI, OAuth2, API keys and more. Made as a rewrite to the original
+flask version of this app, and to learn more about FastAPI and ORMs.
 
 Current latest version: 0.1.0
 
-## Installation
+## Overview
 
-TBA.
+This project uses FastAPI, SQLModel, Valkey and more.
+
+It also uses modern Python types, but not strictly enforcing static type checking.
+It's simpler for me because I don't need to worry about mypy and others while still
+benefitting from IDE autocomplete.
+
+There are tests which you can read more about on the App Overview page below.
 
 ## Modules
 
-- [Client Module](client-interface.md)
-- [Client GUI](gui-interface.md)
-- [Server Database](server-db.md)
-- [Server API](api-overview.md)
+- [App Overview](app-overview.md)
+- [Database Component](database-component.md)
