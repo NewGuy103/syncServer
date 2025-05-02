@@ -1,28 +1,44 @@
-site_name: newguy103-syncserver
+site_name: NewGuy103 - syncServer
 site_author: NewGuy103
-copyright: "© NewGuy103, 2024. Licensed under the GNU General Public License v3.0."
+copyright: "© NewGuy103, 2025."
 repo_url: https://github.com/newguy103/syncserver
 repo_name: GitHub
 edit_uri: blob/main/docs/docs
 theme:
-  name: readthedocs
-  highlightjs: true
-plugins:
-  - search
-  - mkdocstrings:
-      handlers:
-        # See: https://mkdocstrings.github.io/python/usage/
-        python:
-          options:
-            docstring_style: sphinx
+  name: material
+  features:
+    - navigation.tabs
+  palette:
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default 
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
 markdown_extensions:
-  - markdown_include.include:
-      base_path: .
-  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
 
 nav:
   - Home: 'index.md'
-  - 'Client Module': 'client-interface.md'
-  - 'Client GUI': 'gui-interface.md'
-  - 'Server API': 'api-overview.md'
-  - 'Server Database': 'server-db.md'
+  - Server:
+    - 'App Overview': 'app-overview.md'
+    - 'Database Component': 'database-component.md'

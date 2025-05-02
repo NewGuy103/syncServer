@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>FilesDownloadManagerDialog</class>
+ <widget class="QDialog" name="FilesDownloadManagerDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>716</width>
+    <height>632</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>syncServer - Download Manager</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QFrame" name="mainDialogFrame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout_2">
+      <item>
+       <layout class="QVBoxLayout" name="runningDownloadsLayout">
+        <item>
+         <widget class="QLabel" name="runningDownloadsLabel">
+          <property name="text">
+           <string>Running Downloads</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QListWidget" name="runningDownloadsListWidget"/>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="completedDownloadsLayout">
+        <item>
+         <widget class="QLabel" name="completedDownloadsLabel">
+          <property name="text">
+           <string>Completed Downloads</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QListWidget" name="completedDownloadsListWidget"/>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="runningUploadsLayout">
+        <item>
+         <widget class="QLabel" name="runningUploadsLabel">
+          <property name="text">
+           <string>Running Uploads</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QListWidget" name="runningUploadsListWidget"/>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="completedUploadsLayout">
+        <item>
+         <widget class="QLabel" name="completedUploadsLabel">
+          <property name="text">
+           <string>Completed Uploads</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QListWidget" name="completedUploadsListWidget"/>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="dialogButtonBox">
+     <property name="orientation">
+      <enum>Qt::Orientation::Horizontal</enum>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::StandardButton::Close|QDialogButtonBox::StandardButton::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>dialogButtonBox</sender>
+   <signal>accepted()</signal>
+   <receiver>FilesDownloadManagerDialog</receiver>
+   <slot>accept()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>248</x>
+     <y>254</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>157</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>dialogButtonBox</sender>
+   <signal>rejected()</signal>
+   <receiver>FilesDownloadManagerDialog</receiver>
+   <slot>reject()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>316</x>
+     <y>260</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>286</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>

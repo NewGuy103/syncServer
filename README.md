@@ -1,137 +1,105 @@
 # newguy103-syncserver
 
-## Overview
+A rewrite of the old Flask version of this app, rewritten in FastAPI using modern dev tooling.
 
-**newguy103-syncserver** is a Python package designed to simplify file synchronization operations through a server-client architecture. The package provides both the server, built on Flask, and a client module for interacting with the server.
+This application is a simple file server that implements OAuth2, API keys and interacting
+with files on the server. A project to learn about paths, ORMs and tests.
 
-Note from me: This is just a hobby project, and not supposed to be a production application. It's just a way to improve my skills and have something to work on.
+Changes can be found under the [changelog/](changelog) folder.
 
-Documentation can be found here: [https://syncserver.readthedocs.io/en/latest/](https://syncserver.readthedocs.io/en/latest/)
+## Requirements
+
+* Python 3.12+ in a virtual environment and [uv](https://docs.astral.sh/uv/).
+* A PostgreSQL instance.
+* A [Valkey](https://valkey.io/) instance.
 
 ## Installation
 
+`newguy103-syncserver` can be pulled using the GitHub Container Registry:
+
 ```bash
-pip install newguy103-syncserver
+docker pull ghcr.io/newguy103/syncserver
 ```
 
-## Client Module
+If you want to clone the repository directly:
 
-### Usage:
-
-The client module offers `ServerInterface` as the preferred way to access the server, but also includes the old
-`FileInterface`, `DirInterface` and `APIKeyInterface` classes for backwards compatibility.
-
-### Example:
-```python
-from syncserver.client import ServerInterface
-
-server_url = "http://localhost:8561"
-interface = ServerInterface(
-    server_url, username="alice", 
-    password="yourPassword"
-)
-
-# API keys can be used and will be preferred over username/password
-interface = ServerInterface(
-    server_url, apikey="YOUR_APIKEY_HERE"
-)
-
-interface.files.upload([["./local-file.txt", "/remote-file.txt"]])
-interface.dirs.create("/remote-dir")
-
-interface.api_keys.create(
-    "My API key", ["create", "read", "update", "delete"],
-    "2025-03-14 8:00:00"
-)
-```
-
-## Server (CLI)
-
-### `syncserver-server` CLI:
-
-The server runs as a Flask application and handles server routes. The name of the flask object in the script is `APP`.
-```
-$ python -m syncserver.server
-$ syncserver-server
-Enter database password [or empty if not protected]: 
-```
-
-The script listens on port `8561` by default.
-You can change the port that the flask server listens on with the `SYNCSERVER_PORT` environment variable.
 ```bash
-export SYNCSERVER_PORT=7009
+git clone https://github.com/newguy103/syncserver
+cd syncserver
+uv venv
+source .venv/bin/activate
+uv sync
 ```
 
-### Routes:
+This will clone the repository locally and install the required dependencies for the server.
 
-- `/api/files/upload`: Upload files
-- `/api/files/modify`: Modify files
-- `/api/files/delete`: Delete files
-- `/api/files/restore`: Restore deleted files
-- `/api/files/list-deleted`: List deleted file versions
-- `/api/files/remove-deleted`: Remove a deleted file permanently
-- `/api/files/read`: Download files
-- `/api/dirs/create`: Create directories
-- `/api/dirs/remove`: Remove directories
-- `/api/dirs/list`: List directory contents
-- `/api/dirs/get-paths`: Show all directory paths
-- `/api/keys/create`: Create an API key
-- `/api/keys/delete`: Delete an API key
-- `/api/keys/list-all`: List API key names
-- `/api/keys/get-data`: Get API key data
+If you want to also run the client, make sure to include `--extra client` to uv sync.
 
-**Note:** Ensure the server is running and accessible from the specified URL.
+### Dependencies
 
-### `syncserver-server.db` CLI:
+The app requires these server dependencies:
 
-This is a way to manage the database configuration and users from the terminal.
+* aiofiles
+* asyncpg
+* cryptography
+* fastapi[standard]
+* passlib[argon2]
+* pydantic
+* pydantic-settings
+* sqlmodel
+* uvicorn[standard]
+* valkey
 
-```
-$ syncserver-server.db --help
-usage: syncserver.server-db [-h] [--database-path [db-path]] [--database-protected] [--recover-key] [--edit-vars] [--edit-config]
-                            [--set-protection] [--add-user] [--remove-user]
+If you want to also run the PySide6 client, you need to install the following:
 
-Command line tool to manage the syncServer database locally. Current application version: 1.2.0
+* PySide6
+* keyring
+* platformdirs
 
-options:
-  -h, --help            show this help message and exit
-  --database-path [db-path], -db [db-path]
-                        Path to syncServer database.
-  --database-protected, -dp
-                        Prompt to enter the database password.
-  --recover-key, -rk    Recover the original encryption key with the key password.
-  --edit-vars, -ev      Edit configuration variables without fully initializing the database.
-  --edit-config, -ec    Open the configuration and edit it with nano.
-  --set-protection, -sp
-                        Set the encryption key that the database will use.
-  --add-user, -aU       Create a new user using provided credentials
-  --remove-user, -rU    Remove an existing user.
+## Usage
 
-```
-## Server (Module)
+To run the server, you can use Docker:
 
-### Usage:
-
-The module allows you to interact with `syncserver.server` databases without using the frontend.
-
-### Example:
-```python
-from syncserver.server import FileDatabase
-file_stream = open('./file.txt', 'rb')
-
-# Initialize database connection to local database file
-# Database path defaults to $XDG_DATA_HOME/syncServer-server/<version>/syncServer.db
-file_database = FileDatabase(db_path='')
-
-file_database.add_file("user", "/remote-file-path", file_stream)
-file_database.dirs.make_dir("user", "/remote-dir-path")
-
-file_database.api_keys.create_key("user", ['create'], "Main-API-Key", "2025-01-01 0:00:00")
+```bash
+docker run \
+--name newguy103-syncserver \
+--publish 8000:8000 \
+--volume ./syncserver_data:/app/syncserver \
+ghcr.io/newguy103/syncserver
 ```
 
-Refer to the documentation for more information.
+Or if you cloned the repository directly:
 
+```bash
+fastapi run app/server/main.py
+```
+
+There is an example docker compose file in the [docker](docker/docker-compose.yml) directory,
+which you can use to run the app.
+
+### Environment
+
+The app requires these environment variables:
+
+* `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_DB` and `POSTGRES_PASSWORD` for the database connection.
+* `VALKEY_URI` as the URI to the Valkey server.
+
+Other optional environment variables can be found in the project docs.
+
+## Testing
+
+There are tests available in the [tests/](tests) directory, and these use Pytest.
+
+To run them, execute `./scripts/tests.sh`. This is required, as the script
+will set the environment variables for the tests to be a specific directory.
+
+## Disclaimer
+
+PySide6 is licensed under LGPL 3.0. You can find the source code here:
+[PySide6 Source Code](https://code.qt.io/cgit/pyside/pyside-setup.git/).
+
+This project is licensed under Mozilla Public License 2.0.
 
 ## Version
 
-1.2.0
+0.1.0
