@@ -11,9 +11,10 @@ The app uses [SQLModel](https://sqlmodel.tiangolo.com/) as the ORM, because it u
 ## Tables
 
 The models used to generate the database tables can be found in
-[`app/models/dbtables.py`](https://github.com/NewGuy103/syncServer).
+[`app/models/dbtables.py`](https://github.com/NewGuy103/syncServer/blob/main/app/server/models/dbtables.py).
 
 ## Code documentation
 
-The database code can be found under [`app/internal/database.py`](https://github.com/NewGuy103/syncServer),
+The database code can be found under
+[`app/internal/database.py`](https://github.com/NewGuy103/syncServer/blob/main/app/server/internal/database.py),
 and uses Python type hints.

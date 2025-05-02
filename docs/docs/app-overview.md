@@ -33,7 +33,7 @@ docker run \
 ghcr.io/newguy103/syncserver:latest
 ```
 
-There is a Docker Compose example in the [docker](https://github.com/NewGuy103/syncServer/)
+There is a Docker Compose example in the [docker](https://github.com/NewGuy103/syncServer/tree/main/docker)
 directory of the repository if you prefer using compose.
 
 You can also use the edge tag for the images built per commit in the main branch.
@@ -99,7 +99,7 @@ Or an `X-Api-Key` header for API key authorization.
 ## Tests
 
 There are tests available which are all integration tests for the database and the full route.
-These tests are in the [tests](https://github.com/NewGuy103/syncServer/) directory.
+These tests are in the [tests](https://github.com/NewGuy103/syncServer/tree/main/tests) directory.
 
 To run it, clone the repository and install dev dependencies:
 

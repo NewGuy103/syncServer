@@ -15,10 +15,10 @@ services:
     image: valkey/valkey
     container_name: valkey
   syncserver_fastapi:
-    # image: ghcr.io/newguy103/syncserver-fastapi:latest
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/newguy103/syncserver:edge
+    # build:
+    #   context: ..
+    #   dockerfile: docker/Dockerfile
     container_name: syncserver_fastapi
     volumes:
       - ./syncserver:/app/syncserver:rw
