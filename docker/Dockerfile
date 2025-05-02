@@ -1,6 +1,12 @@
 FROM python:3.13
 ENV PYTHONUNBUFFERED=1
 
+LABEL org.opencontainers.image.source="https://github.com/NewGuy103/syncServer"
+LABEL org.opencontainers.image.documentation="https://newguy103.github.io/syncServer/"
+
+LABEL org.opencontainers.image.licenses="MPL-2.0"
+LABEL org.opencontainers.image.authors="NewGuy103"
+
 WORKDIR /app/
 
 # The installer requires curl (and certificates) to download the release archive

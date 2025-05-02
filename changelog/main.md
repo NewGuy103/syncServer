@@ -1,53 +1,31 @@
-# Relicense under MPL-2.0 and cleanup repository
+# Update docs and metadata
 
 **Version**: v0.1.0
 
-**Date:** 1/05/2025
+**Date:** 2/05/2025
 
 ## Additions
 
-**`.github/workflows/docker-image.yml`**:
+**`docker/Dockerfile`**:
 
-* Added Docker Image CI workflow to build Docker images on `ghcr.io`.
-
-**`.github/workflows/project-docs.yml`**:
-
-* Added Material For Mkdocs CI workflow to build documentation on GitHub Pages.
-
-**`/README.md`**:
-
-* Added more information to project readme.
-
-**`docs/docs/app-overview.md`**:
-
-* Renamed from `api-overview.md` and added up to date documentation.
-
-**`docs/docs/database-component.md`**:
-
-* Renamed from `server-db.md` and added up to date documentation.
+* Added metadata labels to image.
 
 ## Changes
 
-**`/LICENSE`**:
-
-* Changed license from GNU GPL 3.0 to MPL 2.0.
-
 **`docker/docker-compose.yml`**:
 
-* Now sets `USE_VALKEY_CACHE=true` and `ENVIRONMENT=prod` by default.
+* Commented the `build` block to make the compose file reference the ghcr.io image by default.
 
-**`docker/Dockerfile`**:
+**`/ruff.toml`**:
 
-* Changed to not copy `./scripts` to the Docker image.
+* Pinned target version to 3.13.
 
-**`docs/docs/client-interface.md | docs/docs/gui-interface.md`**
+**`docs/docs/app-overview.md | docs/docs/database-component.md`**:
 
-* Removed PySide6 client documentation, too much of a hassle to document.
-
-**`docs/requirements.in`**:
-
-* Removed unused `requirements.in` file.
+* Updated links to point to the exact file in the repository.
 
 ## Misc
 
-* Planning to make Pytest run in a GitHub Actions workflow.
+* Old documentation ([readthedocs](https://syncserver.readthedocs.io)) will stay as an archive
+  to the old flask app. The `old-flask-app` branch will be archived too.
+* Planning to release v0.1.0 once everything is complete.
