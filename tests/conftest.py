@@ -25,13 +25,15 @@ def pytest_collection_modifyitems(session, config, items):
             "test_auth.py": 2,
             "test_files.py": 3,
             "test_folders.py": 4,
-            "test_deletedfiles.py": 5
+            "test_deletedfiles.py": 5,
+            "test_users.py": 6
         },
         "database": {
-            "test_users_db.py": 6,
-            "test_session_db.py": 7,
-            "test_files_db.py": 8,
-            "test_folders_db.py": 9
+            "test_users_db.py": 7,
+            "test_session_db.py": 8,
+            "test_files_db.py": 9,
+            "test_folders_db.py": 10,
+            "test_deletedfiles_db.py": 11
         },
     }
 
@@ -121,18 +123,21 @@ async def get_admin_userinfo(client: AsyncClient, admin_headers: dict) -> UserIn
 
 @pytest.fixture(scope='session', name='admin_apikey_headers')
 async def get_admin_api_key(client: AsyncClient, admin_headers: dict):
-    expiry_date = datetime.now(timezone.utc) + timedelta(days=1)
-    post_data = {
-        'key_name': secrets.token_hex(16),
-        'key_permissions': ['create', 'read', 'update', 'delete'],
-        'expiry_date': expiry_date.strftime('%Y-%m-%dT%H:%M:%S.%f%z')
-    }
-    res = await client.post(
-        '/api/auth/api_keys',
-        headers=admin_headers,
-        json=post_data
-    )
-    res_json: str = res.json()
-    headers: dict = {'X-Api-Key': res_json}
+    async def inner(key_perms: list[str]):
+        expiry_date = datetime.now(timezone.utc) + timedelta(days=1)
+        post_data = {
+            'key_name': secrets.token_hex(16),
+            'key_permissions': key_perms,
+            'expiry_date': expiry_date.strftime('%Y-%m-%dT%H:%M:%S.%f%z')
+        }
+        res = await client.post(
+            '/api/auth/api_keys',
+            headers=admin_headers,
+            json=post_data
+        )
+        res_json: str = res.json()
+        headers: dict = {'X-Api-Key': res_json}
 
-    return headers
+        return headers
+
+    return inner

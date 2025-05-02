@@ -6,17 +6,42 @@ from fastapi.responses import FileResponse
 
 from ..internal import ospaths
 from ..internal.database import database
-from ..models.common import GenericSuccess
+from ..models.common import GenericSuccess, HTTPStatusError
 from ..deps import (
     UserAuthDep, LoggerDep, SessionDep, KeyPermCreate,
     KeyPermRead, KeyPermUpdate, KeyPermDelete
 )
 
 
-router = APIRouter(prefix='/file')
+router = APIRouter(
+    prefix='/file',
+    responses={
+        403: {
+            'model': HTTPStatusError,
+            'description': '`X-API-Key` header lacks a specific permission.'
+        }
+    }
+)
 
 
-@router.post('/{file_path:path}')
+@router.post(
+    '/{file_path:path}',
+    responses={
+        400: {
+            'model': HTTPStatusError,
+            'description': "File path provided is a folder."
+        },
+        404: {
+            'model': HTTPStatusError,
+            'description': "Parent folder was not found."
+        },
+        409: {
+            'model': HTTPStatusError,
+            'description': "A file with the same name already exists."
+        }
+    },
+    response_model=GenericSuccess
+)
 async def upload_file(
     file_path: str, file: UploadFile, 
     user: UserAuthDep, session: SessionDep,
@@ -52,7 +77,22 @@ async def upload_file(
     return {'success': True}
 
 
-@router.get('/{file_path:path}')
+@router.get(
+    '/{file_path:path}',
+    responses={
+        200: {
+            'description': "The file stored in the server."
+        },
+        400: {
+            'model': HTTPStatusError,
+            'description': "The file path is a folder."
+        },
+        404: {
+            'model': HTTPStatusError,
+            'description': "File path could not be found."
+        }
+    },
+)
 async def retrieve_file(
     file_path: str, user: UserAuthDep, 
     logger: LoggerDep, session: SessionDep, 
@@ -82,7 +122,20 @@ async def retrieve_file(
     raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
-@router.put('/{file_path:path}')
+@router.put(
+    '/{file_path:path}',
+    responses={
+        400: {
+            'model': HTTPStatusError,
+            'description': "File path provided is a folder."
+        },
+        404: {
+            'model': HTTPStatusError,
+            'description': "Either file not found, or parent folder not found."
+        },
+    },
+    response_model=GenericSuccess
+)
 async def update_file(
     file_path: str, file: UploadFile, user: UserAuthDep, 
     session: SessionDep, logger: LoggerDep, api_key: KeyPermUpdate
@@ -117,7 +170,20 @@ async def update_file(
     return {'success': True}
 
 
-@router.delete('/{file_path:path}')
+@router.delete(
+    '/{file_path:path}',
+    responses={
+        400: {
+            'model': HTTPStatusError,
+            'description': "File path provided is a folder."
+        },
+        404: {
+            'model': HTTPStatusError,
+            'description': "Either file not found, or parent folder not found."
+        },
+    },
+    response_model=GenericSuccess
+)
 async def delete_file(
     file_path: str, user: UserAuthDep, 
     session: SessionDep, logger: LoggerDep, api_key: KeyPermDelete
@@ -149,7 +215,24 @@ async def delete_file(
     return {'success': True}
 
 
-@router.patch('/{file_path:path}')
+@router.patch(
+    '/{file_path:path}',
+    responses={
+        400: {
+            'model': HTTPStatusError,
+            'description': "File path provided is a folder."
+        },
+        404: {
+            'model': HTTPStatusError,
+            'description': "Either old file not found, or parent folder not found."
+        },
+        409: {
+            'model': HTTPStatusError,
+            'description': "New filename already exists, or new file path provided is a folder.",
+        }
+    },
+    response_model=GenericSuccess
+)
 async def rename_file(
     file_path: str, new_name: Annotated[str, Body(embed=True)], 
     user: UserAuthDep, session: SessionDep, logger: LoggerDep,

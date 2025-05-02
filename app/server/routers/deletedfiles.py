@@ -10,14 +10,22 @@ from ..deps import (
 from ..internal import ospaths
 from ..internal.database import database
 from ..internal.constants import DBReturnValues
-from ..models.common import GenericSuccess
+from ..models.common import GenericSuccess, HTTPStatusError
 from ..models.files import DeletedFilesGet
 
 
-router = APIRouter(prefix='/deleted')
+router = APIRouter(
+    prefix='/deleted',
+    responses={
+        403: {
+            'model': HTTPStatusError,
+            'description': '`X-API-Key` header lacks a specific permission.'
+        }
+    }
+)
 
 
-@router.get('/')
+@router.get('/', response_model=list[PurePosixPath])
 async def retrieve_files_with_deletes(
     session: SessionDep, user: UserAuthDep,
     api_key: KeyPermRead
@@ -28,7 +36,20 @@ async def retrieve_files_with_deletes(
     return res
 
 
-@router.get('/{file_path:path}')
+@router.get(
+    '/{file_path:path}',
+    responses={
+        400: {
+            'model': HTTPStatusError,
+            'description': "File path provided is a folder."
+        },
+        404: {
+            'model': HTTPStatusError,
+            'description': "File path was not found, or parent folder was not found."
+        },
+    },
+    response_model=list[DeletedFilesGet]
+)
 async def retrieve_deleted_file_versions(
     file_path: str, session: SessionDep,
     user: UserAuthDep, logger: LoggerDep,
@@ -61,18 +82,38 @@ async def retrieve_deleted_file_versions(
     return res
 
 
-@router.delete('/')
+@router.delete('/', response_model=GenericSuccess)
 async def empty_trashbin(
     session: SessionDep, user: UserAuthDep, 
     logger: LoggerDep, api_key: KeyPermDelete
 ) -> GenericSuccess:
+    """Removes all instances of deleted files."""
     await database.files.deleted_files.empty_trashbin(
         session, user.username
     )
     return {'success': True}
 
 
-@router.delete('/{file_path:path}')
+@router.delete(
+    '/{file_path:path}',
+    responses={
+        400: {
+            'model': HTTPStatusError,
+            'description': "File path provided is a folder, or delete offset is invalid."
+        },
+        404: {
+            'model': HTTPStatusError,
+            'description': """
+Either:
+
+- File was not found
+- Parent folder was not found
+- File has no delete entries
+            """
+        }
+    },
+    response_model=GenericSuccess
+)
 async def delete_file_versions(
     file_path: str, session: SessionDep,
     user: UserAuthDep, logger: LoggerDep,
@@ -127,8 +168,20 @@ async def delete_file_versions(
     return {'success': True}
 
 
-
-@router.put('/{file_path:path}')
+@router.put(
+    '/{file_path:path}',
+    responses={
+        400: {
+            'model': HTTPStatusError,
+            'description': "File path provided is a folder, or restore offset is invalid."
+        },
+        404: {
+            'model': HTTPStatusError,
+            'description': "File not found, or parent folder was not found."
+        },
+    },
+    response_model=GenericSuccess
+)
 async def restore_file_version(
     file_path: str, session: SessionDep,
     user: UserAuthDep, logger: LoggerDep,

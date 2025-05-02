@@ -7,7 +7,7 @@ from fastapi import FastAPI
 
 from ..version import __version__
 from .internal.database import database
-from .internal.config import log_conf
+from .internal.config import log_conf, settings
 from .internal.ospaths import make_data_dirs
 from .internal.cache import cache
 from .routers import main
@@ -58,11 +58,28 @@ async def app_lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Application stopped")
 
 
+if settings.ENVIRONMENT == 'local':
+    debug = True
+else:
+    debug = False
+
+
 app = FastAPI(
     title='NewGuy103 - syncServer',
     summary="FastAPI rewrite of the original Flask syncServer.",
+    description="""
+    FastAPI rewrite of the original Flask syncserver.
+
+    This app properly implements OAuth2, API keys, folders, trashbins and more.
+    """,
     version=__version__,
     lifespan=app_lifespan, 
-    debug=True
+    debug=debug,
+    contact={'name': 'NewGuy103'},
+    license_info={
+        'name': 'Mozilla Public License 2.0',
+        'url': 'https://www.mozilla.org/en-US/MPL/2.0/',
+        'identifier': 'MPL-2.0'
+    }
 )
 app.include_router(main.router)

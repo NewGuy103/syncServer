@@ -9,7 +9,7 @@ from app.server.internal.config import data_directories
 pytestmark = pytest.mark.anyio
 
 
-async def test_file_upload(
+async def test_root_file_upload(
         client: AsyncClient, session: AsyncSession, 
         admin_headers: dict, admin_userinfo
 ):
@@ -42,7 +42,7 @@ async def test_file_upload(
     assert file_exists
 
 
-async def test_file_upload_conflict(client: AsyncClient, admin_headers: dict):
+async def test_root_file_upload_conflict(client: AsyncClient, admin_headers: dict):
     file_path = data_directories.temp_files / 'test_fileupload'
     
     # TODO: Use aiofiles once httpx supports it
@@ -60,7 +60,7 @@ async def test_file_upload_conflict(client: AsyncClient, admin_headers: dict):
         assert res_json == {'detail': 'File exists'}
 
 
-async def test_file_retrieve(client: AsyncClient, admin_headers: dict):
+async def test_root_file_retrieve(client: AsyncClient, admin_headers: dict):
     res = await client.get('/api/files/file/file1', headers=admin_headers)
     res_body = res.text
 
@@ -68,7 +68,7 @@ async def test_file_retrieve(client: AsyncClient, admin_headers: dict):
     assert res_body == "HelloWorld"
 
 
-async def test_file_retrieve_invalid(client: AsyncClient, admin_headers: dict):
+async def test_root_file_retrieve_invalid(client: AsyncClient, admin_headers: dict):
     res = await client.get('/api/files/file/fileNull', headers=admin_headers)
     res_json = res.json()
 
@@ -76,7 +76,7 @@ async def test_file_retrieve_invalid(client: AsyncClient, admin_headers: dict):
     assert res_json == {'detail': 'File not found'}
 
 
-async def test_file_update(
+async def test_root_file_update(
         client: AsyncClient, session: AsyncSession, 
         admin_headers: dict, admin_userinfo
 ):
@@ -101,7 +101,7 @@ async def test_file_update(
     assert database_path.is_file()
 
 
-async def test_file_update_invalid(client: AsyncClient, admin_headers: dict):
+async def test_root_file_update_invalid(client: AsyncClient, admin_headers: dict):
     file_path = data_directories.temp_files / 'test_fileupdate'
     with open(file_path, 'rb') as file:
         files = {'file': (file)}
@@ -117,7 +117,7 @@ async def test_file_update_invalid(client: AsyncClient, admin_headers: dict):
         assert res_json == {'detail': 'File not found'}
 
 
-async def test_file_retrieve_updated(client: AsyncClient, admin_headers: dict):
+async def test_root_file_retrieve_updated(client: AsyncClient, admin_headers: dict):
     res = await client.get('/api/files/file/file1', headers=admin_headers)
     res_body = res.text
 
@@ -125,7 +125,7 @@ async def test_file_retrieve_updated(client: AsyncClient, admin_headers: dict):
     assert res_body == "WorldHello"
 
 
-async def test_file_rename(
+async def test_root_file_rename(
         client: AsyncClient, session: AsyncSession, 
         admin_headers: dict, admin_userinfo
 ):
@@ -150,7 +150,7 @@ async def test_file_rename(
     assert file_exists
 
 
-async def test_file_delete(
+async def test_root_file_delete(
         client: AsyncClient, session: AsyncSession, 
         admin_headers: dict, admin_userinfo
 ):
@@ -171,8 +171,22 @@ async def test_file_delete(
     assert not file_exists
 
 
-async def test_file_retrieve_deleted(client: AsyncClient, admin_headers: dict):
+async def test_root_file_retrieve_deleted(client: AsyncClient, admin_headers: dict):
     res = await client.get('/api/files/file/fileRenamed', headers=admin_headers)
+    res_json = res.json()
+
+    assert res.status_code == 404
+    assert res_json == {'detail': "File not found"}
+
+
+async def test_root_file_rename_deleted(client: AsyncClient, admin_headers: dict):
+    post_data = {'new_name': 'fileDoubleRenamed'}
+    res = await client.patch(
+        '/api/files/file/fileRenamed', 
+        headers=admin_headers,
+        json=post_data
+    )
+
     res_json = res.json()
 
     assert res.status_code == 404

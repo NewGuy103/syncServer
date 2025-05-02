@@ -47,7 +47,7 @@ async_engine: 'AsyncEngine' = create_async_engine(
 )
 
 
-DEFAULT_CHUNK_SIZE: int = 10 * 1024 * 1024  # 10 MB
+DEFAULT_CHUNK_SIZE: int = 25 * 1024 * 1024  # 25 MiB
 
 
 class MainDatabase:
@@ -173,14 +173,18 @@ class UserMethods:
         if not existing_user:
             return DBReturnValues.NO_USER
         
+        if username == settings.FIRST_USER_NAME:
+            raise ValueError("Cannot delete the admin user defined in the environment")
+        
         result = await session.exec(select(Users).where(Users.user_id == existing_user.user_id))
         user: Users = result.one()
 
         await session.delete(user)
         await session.commit()
         
-        # TODO: Either make directory cleanup a background task 
-        # or run it directly here
+        user_dir = data_directories.user_data / username
+        shutil.rmtree(user_dir, ignore_errors=False)
+
         return True
 
     async def retrieve_user(self, session: AsyncSession, username: str) -> UserPublicGet:
@@ -341,37 +345,6 @@ class FileMethods:
             return True
         
         return False
-        
-    async def check_for_parent_rename(self, file_path: Path) -> Path | None:
-        """
-        Checks Valkey for the `renamelog:{file_path.parent}` entry.
-        
-        Prevents a race condition where:
-        - File is being uploaded assuming a long upload time.
-        - Parent folder is renamed during that upload.
-        - File finishes uploading to a temp file, but still references the old parent.
-
-        It renames the old parent into the new parent and then returns the changed path.
-        """
-
-        # Valkey returns bytes, this did not have to take 3 days to debug
-        if self.valkey is None:
-            changed_parent: bytes = await cache.get(f'renamelog:{file_path.parent}')
-        else:
-            changed_parent: bytes = await self.valkey.get(f"renamelog:{file_path.parent}")
-        
-        if changed_parent and not file_path.parent.exists():
-            decoded_bytes: str = changed_parent.decode('utf-8')
-            renamed_parent = Path(decoded_bytes)
-
-            logger.debug(
-                "Hit a race condition! Parent does not match: '%s' != '%s'",
-                renamed_parent, file_path
-            )
-            file_path = file_path.parent.with_name(renamed_parent.name) / file_path.name
-            return file_path
-        
-        return None
     
     async def check_file_exists(self, session: AsyncSession, username: str, file_path: Path) -> bool:
         if not file_path.exists() or file_path.is_dir():
@@ -437,24 +410,11 @@ class FileMethods:
         written_size: int = await aiofiles.os.path.getsize(temp_path)
         logger.debug("Wrote %d bytes to file %s", written_size, temp_path)
 
-        if written_size != file_stream.size:
-            logger.warning(
-                "Expected to write %d bytes, only wrote %d bytes",
-                file_stream.size, written_size
-            )
-            temp_path.unlink()
-
-            raise ValueError("Unexpected incomplete write")
-
         folder_lock = self.parent.folders.folder_lock(str(file_path.parent))
         async with lock, folder_lock:
             user: Users | None = await self.parent.get_user(session, username)
             if not user:
                 raise ValueError(f"username {username} is invalid")
-            
-            changed_filepath = await self.check_for_parent_rename(file_path)
-            if changed_filepath:
-                file_path = changed_filepath
             
             folder: Folders = await self.parent.folders.get_folder(session, username, file_path.parent)
             if not folder:
@@ -542,10 +502,6 @@ class FileMethods:
 
         folder_lock = self.parent.folders.folder_lock(file_path.parent)
         async with lock, folder_lock:
-            changed_filepath = await self.check_for_parent_rename(file_path)
-            if changed_filepath:
-                file_path = changed_filepath
-            
             temp_path.rename(file_path)
         
         return True
@@ -566,10 +522,6 @@ class FileMethods:
                 user: Users = await self.parent.get_user(session, username)
                 if not user:
                     raise ValueError(f"username {username} is invalid")
-                
-                changed_filepath = await self.check_for_parent_rename(file_path)
-                if changed_filepath:
-                    file_path = changed_filepath
                 
                 folder: Folders = await self.parent.folders.get_folder(session, username, file_path.parent)
                 if not folder:
@@ -624,19 +576,11 @@ class FileMethods:
                 user: Users = await self.parent.get_user(session, username)
                 if not user:
                     raise ValueError(f"username {username} is invalid")
-                
-                old_changed_filepath = await self.check_for_parent_rename(file_path)
-                if old_changed_filepath:
-                    file_path = old_changed_filepath
-                
+
                 old_folder: Folders = await self.parent.folders.get_folder(session, username, file_path.parent)
                 if not old_folder:
                     raise ValueError(f"folder {file_path.parent} does not exist")
-                
-                new_changed_filepath = await self.check_for_parent_rename(new_path)
-                if new_changed_filepath:
-                    file_path = new_changed_filepath
-                
+
                 new_folder: Folders = await self.parent.folders.get_folder(session, username, new_path.parent)
                 if not new_folder:
                     raise ValueError(f"folder {new_path.parent} does not exist")
@@ -668,7 +612,6 @@ class FileMethods:
 class DeletedFileMethods:
     def __init__(self, maindb: MainDatabase, parent: FileMethods):
         self.parent = parent
-        self.check_for_parent_rename = parent.check_for_parent_rename
 
         self.maindb = maindb
         self.async_engine = maindb.async_engine
@@ -716,11 +659,7 @@ class DeletedFileMethods:
         user: Users | None = await self.maindb.get_user(session, username)
         if not user:
             raise ValueError(f"username {username} is invalid")
-        
-        changed_filepath = await self.check_for_parent_rename(file_path)
-        if changed_filepath:
-            file_path = changed_filepath
-        
+
         folder: Folders = await self.maindb.folders.get_folder(session, username, file_path.parent)
         if not folder:
             raise ValueError(f"folder {file_path.parent} does not exist")
@@ -786,11 +725,7 @@ class DeletedFileMethods:
         user: Users | None = await self.maindb.get_user(session, username)
         if not user:
             raise ValueError(f"username {username} is invalid")
-        
-        changed_filepath = await self.check_for_parent_rename(file_path)
-        if changed_filepath:
-            file_path = changed_filepath
-        
+
         folder: Folders = await self.maindb.folders.get_folder(session, username, file_path.parent)
         if not folder:
             raise ValueError(f"folder {file_path.parent} does not exist")
@@ -836,11 +771,7 @@ class DeletedFileMethods:
         user: Users | None = await self.maindb.get_user(session, username)
         if not user:
             raise ValueError(f"username {username} is invalid")
-        
-        changed_filepath = await self.check_for_parent_rename(file_path)
-        if changed_filepath:
-            file_path = changed_filepath
-        
+
         folder: Folders = await self.maindb.folders.get_folder(session, username, file_path.parent)
         if not folder:
             raise ValueError(f"folder {file_path.parent} does not exist")
@@ -905,11 +836,7 @@ class DeletedFileMethods:
         user: Users | None = await self.maindb.get_user(session, username)
         if not user:
             raise ValueError(f"username {username} is invalid")
-        
-        changed_filepath = await self.check_for_parent_rename(file_path)
-        if changed_filepath:
-            file_path = changed_filepath
-        
+
         folder: Folders = await self.maindb.folders.get_folder(session, username, file_path.parent)
         if not folder:
             raise ValueError(f"folder {file_path.parent} does not exist")
@@ -944,11 +871,6 @@ class DeletedFileMethods:
                 return DBReturnValues.OFFSET_INVALID
 
             file, deleted_file = results
-
-            changed_filepath = await self.check_for_parent_rename(file_path)
-            if changed_filepath:
-                file_path = changed_filepath
-            
             deleted_path = data_directories.trash_bin / str(deleted_file.delete_id)
 
             await session.delete(deleted_file)
@@ -1344,15 +1266,6 @@ class FolderMethods:
 
             await session.commit()
             logger.debug("Changed name of old folder %s to new folder %s", folder_path, new_path)
-
-            folder_path.rename(new_path)
-            if self.valkey is None:
-                encoded_path = str(new_path).encode('utf-8')
-                await cache.set(f'renamelog:{folder_path}', encoded_path)
-            else:
-                await self.valkey.set(f"renamelog:{folder_path}", str(new_path), ex=3600)
-
-            logger.debug("Set cache renamelog:%s to '%s'", folder_path, new_path)
 
         return True
 

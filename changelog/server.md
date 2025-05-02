@@ -1,33 +1,39 @@
-# Small rewrite to make Valkey server an optional requirement
+# Remove renamelog due to it being redundant and add more tests
 
 **Version**: v0.1.0
 
-**Date:** 29/04/2025
+**Date:** 2/05/2025
 
 ## Additions
 
+**`app/server/main.py`**:
+
+* Added check to set `debug=True/False` depending on environment.
+* Added description, license info and contact info.
+
 **`app/server/internal/config.py`**:
 
-* Added `USE_VALKEY_CACHE` environment variable.
+* Added validation to check if some variables are still the default 'helloworld' and
+  raises a warning or error depending on environment.
 
-**`app/server/internal/cache.py`**:
+**`app/server/models/common.py`**:
 
-* Added `CacheProvider` class as a simple class to create locks either with Valkey or
-  asyncio. Will probably refine soon.
+* Added `HTTPStatusError` model for OpenAPI documentation when raising a client error.
 
-**`app/server/routers/deletedfiles.py`**:
+**`tests/database/test_deletedfiles_db.py`**:
 
-* Added `offset` parameter and a simple docstring to `GET /api/files/deleted/{file_path}`.
+* Added test cases for deleted files on the database.
+
+**`tests/database/test_deletedfiles_db.py`**:
+
+* Added test cases for user routes.
+
+## Changes
 
 **`app/server/internal/database.py`**:
 
-* Added `valkey_client` parameter to `async MainDatabase.setup()`.
-
-**`.github/workflows/tests.yml`**:
-
-* Added Pytest actions to run tests on every push.
-
-## Changes
+* `get_admin_apikey_headers()` now returns a callable async function which takes in a list
+  of key permissions.
 
 **`app/server/main.py`**:
 
@@ -41,10 +47,10 @@
 
 **`app/server/internal/database.py`**:
 
-* File, folder and delete locks now get their locks either from Valkey or a local asyncio Lock.
-* Renamelog now uses a very simple get/set function from `CacheProvider` as a fallback
-  if Valkey is not present.
+* Removed renamelog setup, the function never actually ran when attempting to recreate
+  the "race condition" I found. Locks will stay though.
+* Increased chunk size from 10 MiB to 25 MiB when saving files.
 
 ## Misc
 
-* Planning to use FastAPI's methods to write the OpenAPI spec of the server (responses, response_models, etc).
+* Added OpenAPI documentation for all of the methods.

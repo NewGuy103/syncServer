@@ -1,5 +1,5 @@
 from typing import Literal
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class UserInfo(BaseModel):
@@ -9,3 +9,14 @@ class UserInfo(BaseModel):
 
 class GenericSuccess(BaseModel):
     success: Literal[True]
+
+
+class HTTPStatusError(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "detail": "Short client error message here."
+            }
+        }
+    )
+    detail: str

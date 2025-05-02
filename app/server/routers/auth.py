@@ -10,7 +10,7 @@ from ..deps import (
     LoggerDep, SessionDep, KeyNotAllowed
 )
 from ..models.auth import APIKeyCreate, APIKeyInfo, AccessTokenError, AccessTokenResponse, AccessTokenErrorCodes
-from ..models.common import UserInfo, GenericSuccess
+from ..models.common import UserInfo, GenericSuccess, HTTPStatusError
 from ..internal.constants import DBReturnValues
 from ..internal.database import database
 
@@ -28,6 +28,10 @@ router = APIRouter(prefix='/auth', tags=['Authorization'])
         401: {
             'model': AccessTokenError,
             'description': 'Invalid login crendentials were passed in'
+        },
+        403: {
+            'model': HTTPStatusError,
+            'description': 'Raised if an `X-API-Key` header is passed to this endpoint.'
         }
     },
     response_model=AccessTokenResponse
@@ -80,7 +84,19 @@ async def token_login(
     )
 
 
-@router.post('/revoke', dependencies=[KeyNotAllowed])
+@router.post(
+    '/revoke', 
+    dependencies=[KeyNotAllowed],
+    responses={
+        200: {
+            'content': None,
+        },
+        403: {
+            'model': HTTPStatusError,
+            'description': 'Raised if an `X-API-Key` header is passed to this endpoint.'
+        }
+    }
+)
 async def revoke_login_token(user: UserAuthDep, token: Annotated[str, Form()], session: SessionDep) -> None:
     """OAuth2 token revocation.
     
@@ -98,16 +114,29 @@ async def revoke_login_token(user: UserAuthDep, token: Annotated[str, Form()], s
     return
 
 
-@router.get('/test_auth')
+@router.get('/test_auth', response_model=UserInfo)
 async def auth_test(user: UserAuthDep, api_key: KeyPermRead) -> UserInfo:
+    """Tests OAuth2 authorization or an API key for the `read` permission."""
     return {'username': user.username, 'auth_type': user.auth_type}
 
 
-@router.post('/api_keys')
+@router.post(
+    '/api_keys', 
+    responses={
+        409: {
+            "model": HTTPStatusError,
+            "description": "An API key with the same name already exists."
+        }
+    }
+)
 async def create_api_key(
     data: APIKeyCreate, user: UserAuthDep, api_key: KeyPermCreate,
     logger: LoggerDep, session: SessionDep
 ) -> str:
+    """Create an API key to interact with the server.
+    
+    Returns an API key with the format: `syncserver-...`.
+    """
     api_key: str = await database.api_keys.create_key(
         session, user.username, data.key_permissions,
         data.key_name, data.expiry_date
@@ -119,12 +148,21 @@ async def create_api_key(
             raise HTTPException(status_code=409, detail="API key with the same name exists")
         case _:
             logger.error("Invalid data: %s", api_key)
-            raise HTTPException(status_code=500, detail="Internal Server Error")
+            raise RuntimeError(f"invalid data: {api_key}")
 
     return api_key
 
 
-@router.delete('/api_keys/{key_name:path}')
+@router.delete(
+    '/api_keys/{key_name:path}',
+    responses={
+        404: {
+            "model": HTTPStatusError,
+            "description": "Provided API key does not exist."
+        }
+    },
+    response_model=GenericSuccess
+)
 async def delete_api_key(
     key_name: str, logger: LoggerDep, session: SessionDep,
     user: UserAuthDep, api_key: KeyPermDelete
@@ -137,12 +175,12 @@ async def delete_api_key(
             raise HTTPException(status_code=404, detail="API key does not exist")
         case _:
             logger.info("Invalid data:", key_deleted)
-            raise HTTPException(status_code=500, detail="Internal Server Error")
+            raise RuntimeError(f"Invalid data: {key_deleted}")
     
     return {'success': True}
 
 
-@router.get('/api_keys')
+@router.get('/api_keys', response_model=list[APIKeyInfo])
 async def list_api_keys(
     user: UserAuthDep, api_key: KeyPermRead,
     logger: LoggerDep, session: SessionDep
@@ -151,7 +189,15 @@ async def list_api_keys(
     return keys
 
 
-@router.get('/api_keys/{key_name:path}')
+@router.get(
+    '/api_keys/{key_name:path}', responses={
+        404: {
+            "model": HTTPStatusError,
+            "description": "Provided API key does not exist."
+        }
+    },
+    response_model=APIKeyInfo
+)
 async def get_key_information(
     key_name: str,
     user: UserAuthDep, api_key: KeyPermRead,

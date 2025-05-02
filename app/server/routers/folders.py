@@ -10,17 +10,27 @@ from ..deps import (
     KeyPermRead, KeyPermUpdate, KeyPermDelete
 )
 from ..models.folders import FolderContents
-from ..models.common import GenericSuccess
+from ..models.common import GenericSuccess, HTTPStatusError
 
 # TODO: Find a way to turn parent checks into a reusable function
-router = APIRouter(prefix='/folders', tags=['Folder Management'])
+router = APIRouter(
+    prefix='/folders', 
+    tags=['Folder Management'],
+    responses={
+        403: {
+            'model': HTTPStatusError,
+            'description': '`X-API-Key` header lacks a specific permission.'
+        }
+    }
+)
 
 
-@router.get('/')
+@router.get('/', response_model=FolderContents)
 async def list_root_folder_contents(
     user: UserAuthDep, session: SessionDep, 
     api_key: KeyPermRead
 ) -> FolderContents:
+    """Always returns `FolderContents` for the root path."""
     # No convert and verify since the directory is not user provided
     user_datadir: Path = ospaths.get_user_datadir(user.username)
 
@@ -30,7 +40,20 @@ async def list_root_folder_contents(
     return folder_contents
 
 
-@router.post('/{folder_path:path}')
+@router.post(
+    '/{folder_path:path}',
+    responses={
+        409: {
+            'model': HTTPStatusError,
+            'description': "Folder path provided is a folder, or folder already exists."
+        },
+        400: {
+            'model': HTTPStatusError,
+            'description': "Parent folder was not found."
+        },
+    },
+    response_model=GenericSuccess
+)
 async def create_folder(
     folder_path: str, user: UserAuthDep, 
     session: SessionDep, logger: LoggerDep,
@@ -64,7 +87,24 @@ async def create_folder(
     return {'success': True}
 
 
-@router.get('/{folder_path:path}')
+@router.get(
+    '/{folder_path:path}', 
+    responses={
+        404: {
+            'model': HTTPStatusError,
+            'description': "Folder does not exist."
+        },
+        400: {
+            'model': HTTPStatusError,
+            'description': "Parent folder was not found."
+        },
+        409: {
+            'model': HTTPStatusError,
+            'description': "Folder path provided was a file."
+        }
+    },
+    response_model=FolderContents
+)
 async def list_folder_contents(
     folder_path: str, user: UserAuthDep, 
     session: SessionDep, logger: LoggerDep,
@@ -94,7 +134,24 @@ async def list_folder_contents(
     return folder_contents
 
 
-@router.delete('/{folder_path:path}')
+@router.delete(
+    '/{folder_path:path}',
+    responses={
+        400: {
+            'model': HTTPStatusError,
+            'description': "Parent folder was not found."
+        },
+        404: {
+            'model': HTTPStatusError,
+            'description': "Folder does not exist."
+        },
+        409: {
+            'model': HTTPStatusError,
+            'description': "Folder path provided was a file."
+        }
+    },
+    response_model=GenericSuccess
+)
 async def remove_folder(
     folder_path: str, user: UserAuthDep, 
     session: SessionDep, logger: LoggerDep,
@@ -124,7 +181,30 @@ async def remove_folder(
     return {'success': True}
 
 
-@router.put('/{folder_path:path}')
+@router.put(
+    '/{folder_path:path}',
+    responses={
+        400: {
+            'model': HTTPStatusError,
+            'description': "Parent folder for folder path was not found."
+        },
+        404: {
+            'model': HTTPStatusError,
+            'description': "Old folder does not exist."
+        },
+        409: {
+            'model': HTTPStatusError,
+            'description': """
+Either:
+
+- Old folder path provided is a file
+- New folder path provided is a file
+- New folder path already exists
+            """
+        }
+    },
+    response_model=GenericSuccess
+)
 async def rename_folder(
     folder_path: str, 
     new_name: Annotated[str, Body(embed=True)], 

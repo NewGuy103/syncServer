@@ -1,3 +1,4 @@
+import warnings
 import logging.config
 import json
 
@@ -7,8 +8,9 @@ from typing import Literal
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import BaseModel, Field, computed_field, PostgresDsn, DirectoryPath
+from pydantic import BaseModel, Field, computed_field, PostgresDsn, DirectoryPath, model_validator
 from pydantic_core import MultiHostUrl
+from typing_extensions import Self
 
 
 class AppSettings(BaseSettings):
@@ -53,6 +55,30 @@ class AppSettings(BaseSettings):
         port=6379,
         path='0',
     )
+
+    def _check_value_default(self, key_name: str, value: str):
+        if value == 'helloworld':
+            msg = (f"The value of '{key_name}' is the default 'helloworld', "
+                    "changing it to a different value is recommended.")
+
+            if self.ENVIRONMENT == 'local':
+                warnings.warn(msg, stacklevel=1)
+            else:
+                raise ValueError(msg)
+
+    @model_validator(mode="after")
+    def _check_values_okay(self) -> Self:
+        self._check_value_default('POSTGRES_PASSWORD', self.POSTGRES_PASSWORD)
+        self._check_value_default('FIRST_USER_PASSWORD', self.FIRST_USER_PASSWORD)
+
+        if not self.USE_VALKEY_CACHE:
+            msg = ("Disabling Valkey cache is not recommended for running in production")
+            if self.ENVIRONMENT == 'local':
+                warnings.warn(msg, stacklevel=1)
+            else:
+                raise ValueError(msg)
+        
+        return self
 
 
 class DataDirectories(BaseModel):

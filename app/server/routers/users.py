@@ -1,25 +1,47 @@
 from typing import Annotated
 from fastapi import APIRouter, HTTPException, Path
 
+
 from ..deps import (
     UserAuthDep, LoggerDep, SessionDep, KeyPermCreate,
     KeyPermRead, KeyPermDelete, IsAdminDep
 )
 from ..internal.constants import DBReturnValues
 from ..internal.database import database
+from ..models.common import GenericSuccess, HTTPStatusError
 from ..models.users import UserPublicGet, UserCreate
 
 
-router = APIRouter(prefix='/users', tags=['User Management'], dependencies=[IsAdminDep])
+router = APIRouter(
+    prefix='/users', 
+    tags=['User Management'], 
+    dependencies=[IsAdminDep],
+    responses={
+        403: {
+            'model': HTTPStatusError,
+            'description': 'Raised if the current user is not the first user provided.'
+        }
+    }
+)
 
 
-@router.get('/')
+@router.get('/', response_model=list[UserPublicGet])
 async def get_users(user: UserAuthDep, session: SessionDep, api_key: KeyPermRead) -> list[UserPublicGet]:
+    """Returns all available users."""
     users = await database.users.retrieve_all_users(session)
     return users
 
 
-@router.post('/')
+@router.post(
+    '/', 
+    responses={
+        409: {
+            'model': HTTPStatusError,
+            'description': 'User provided already exists.'
+        }
+    },
+    response_model=UserPublicGet
+)
 async def create_user(
     data: UserCreate, user: UserAuthDep, 
     session: SessionDep, logger: LoggerDep,
@@ -41,12 +63,25 @@ async def create_user(
     return user_public
 
 
-@router.delete('/{username}')
+@router.delete(
+    '/{username}',
+    responses={
+        400: {
+            'model': HTTPStatusError,
+            'description': "Raised when attempting to delete own user."
+        },
+        404: {
+            'model': HTTPStatusError,
+            'description': "User provided does not exist."
+        }
+    },
+    response_model=GenericSuccess
+)
 async def delete_user(
     username: Annotated[str, Path(max_length=30)], 
     user: UserAuthDep, api_key: KeyPermDelete,
     session: SessionDep, logger: LoggerDep
-) -> dict:
+) -> GenericSuccess:
     if username == user.username:
         raise HTTPException(status_code=400, detail="Cannot delete own user")
     
