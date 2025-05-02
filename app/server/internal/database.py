@@ -1267,6 +1267,9 @@ class FolderMethods:
             await session.commit()
             logger.debug("Changed name of old folder %s to new folder %s", folder_path, new_path)
 
+            # Somehow removed it with the renamelog setup... Oops
+            folder_path.rename(new_path)
+            
         return True
 
 
