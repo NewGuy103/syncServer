@@ -2,7 +2,9 @@
 
 ### NOTE
 
-This documentation is deprecated. There is currently a rewrite ongoing to migrate this application to FastAPI, but there is no documentation yet. You probably want [syncserver-fastapi](https://github.com/NewGuy103/syncServer/tree/fastapi-rewrite).
+This documentation is deprecated. You probably want the [FastAPI](https://github.com/NewGuy103/syncServer) version of this app.
+
+Updated documentation can be found on [GitHub Pages](https://newguy103.github.io/syncServer/).
 
 This documentation will still be kept, but the flask version of this app will not be updated.
 
@@ -23,6 +25,8 @@ Current latest version: 1.3.0
 ```
 
 ## Installation
+
+(Note: This will install the FastAPI version of the app.)
 
 ```bash
 pip install newguy103-syncserver

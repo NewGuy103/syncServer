@@ -3,7 +3,7 @@
 ## NOTE
 
 This branch is solely for archiving the previous flask code of syncserver. You probably want
-the FastAPI version at `fastapi-rewrite` (or `main` if it was already merged).
+the FastAPI version at the `main` branch.
 
 ## Overview
 
