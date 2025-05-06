@@ -13,7 +13,7 @@ import valkey.asyncio as valkey
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlmodel import SQLModel, delete, desc, null, select, distinct
+from sqlmodel import delete, desc, null, select, distinct
 from sqlalchemy.pool import AsyncAdaptedQueuePool
 from sqlalchemy.orm import selectinload
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -68,10 +68,11 @@ class MainDatabase:
         
         This must be called first before using the child methods.
         """
-        async with self.async_engine.begin() as conn:
-            # await conn.run_sync(SQLModel.metadata.drop_all)
-            await conn.run_sync(SQLModel.metadata.create_all)
-    
+        # Let Alembic handle creating the schema
+        # async with self.async_engine.begin() as conn:
+        #     # await conn.run_sync(SQLModel.metadata.drop_all)
+        #     await conn.run_sync(SQLModel.metadata.create_all)
+
         self.valkey: valkey.Valkey | None = valkey_client
         self.users = UserMethods(self)
         

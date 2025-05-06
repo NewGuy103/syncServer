@@ -11,9 +11,37 @@ services:
       - POSTGRES_USER=syncserver
       - POSTGRES_DB=syncserver
       - POSTGRES_PASSWORD=helloworld
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U syncserver -d syncserver"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
   valkey:
     image: valkey/valkey
     container_name: valkey
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping | grep PONG"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+  prestart:
+    image: ghcr.io/newguy103/syncserver:edge
+    # build:
+    #   context: ..
+    #   dockerfile: docker/Dockerfile
+    entrypoint: ["bash", "/app/scripts/migrations.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+        restart: true
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=syncserver
+      - POSTGRES_USER=syncserver
+      - POSTGRES_PASSWORD=helloworld
   syncserver_fastapi:
     image: ghcr.io/newguy103/syncserver:edge
     # build:
@@ -33,3 +61,10 @@ services:
       - ENVIRONMENT=prod
     ports:
       - 8000:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      prestart:
+        condition: service_completed_successfully

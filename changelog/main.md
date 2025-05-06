@@ -1,31 +1,47 @@
-# Update docs and metadata
+# Add alembic migrations to project
 
 **Version**: v0.1.0
 
-**Date:** 2/05/2025
+**Date:** 6/05/2025
 
 ## Additions
 
+**`/alembic.ini | migrations/`**:
+
+* Added alembic migrations to project.
+
+**`/pyproject.toml | /uv.lock`**:
+
+* Added `alembic` as a dependency.
+
 **`docker/Dockerfile`**:
 
-* Added metadata labels to image.
-
-## Changes
+* Added `alembic.ini`, `migrations/` and `scripts/` to image.
 
 **`docker/docker-compose.yml`**:
 
-* Commented the `build` block to make the compose file reference the ghcr.io image by default.
+* Added example healthchecks to cache and database images.
+* Added `prestart` service to automatically call `scripts/migrations.sh`.
+* Added `depends_on:` block to the app image.
 
-**`/ruff.toml`**:
+**`scripts/migrations.sh`**:
 
-* Pinned target version to 3.13.
+* Added script to run any alembic migrations required.
 
-**`docs/docs/app-overview.md | docs/docs/database-component.md`**:
+**`docs/docs/database-component.md`**:
 
-* Updated links to point to the exact file in the repository.
+* Added migrations section.
+
+**`.github/workflows/tests.yml`**:
+
+* Added `contents: read` permissions to tests action.
+
+## Changes
+
+**`docker/Dockerfile`**:
+
+* Changed how the image gets the `uv` executable to the proper way by using `COPY --from`.
 
 ## Misc
 
-* Old documentation ([readthedocs](https://syncserver.readthedocs.io)) will stay as an archive
-  to the old flask app. The `old-flask-app` branch will be archived too.
-* Planning to release v0.1.0 once everything is complete.
+* Releasing v0.1.0 is almost ready, only need to complete the client GUI.

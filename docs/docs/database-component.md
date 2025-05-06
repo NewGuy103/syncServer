@@ -18,3 +18,8 @@ The models used to generate the database tables can be found in
 The database code can be found under
 [`app/internal/database.py`](https://github.com/NewGuy103/syncServer/blob/main/app/server/internal/database.py),
 and uses Python type hints.
+
+## Migrations
+
+The app uses alembic to handle both setting up the schema and database migrations. The script
+`migrations.sh` runs all required commands.

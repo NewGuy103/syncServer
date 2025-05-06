@@ -4,13 +4,12 @@ import json
 
 import aiofiles
 
-from typing import Literal
+from typing import Literal, Self
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import BaseModel, Field, computed_field, PostgresDsn, DirectoryPath, model_validator
 from pydantic_core import MultiHostUrl
-from typing_extensions import Self
 
 
 class AppSettings(BaseSettings):

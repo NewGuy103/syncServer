@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from httpx import AsyncClient, ASGITransport
-from sqlmodel import text
+from sqlmodel import SQLModel, text
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -59,6 +59,11 @@ async def override_database():
     )
     database.override_engine(async_engine)
 
+    # Tests dont need alembic
+    async with async_engine.begin() as conn:
+        # await conn.run_sync(SQLModel.metadata.drop_all)
+        await conn.run_sync(SQLModel.metadata.create_all)
+
     async with AsyncSession(async_engine) as session:
         statement = text("PRAGMA foreign_keys=ON;")
         await session.exec(statement)
@@ -68,9 +73,6 @@ async def override_database():
 
 @pytest.fixture(scope='session', autouse=True)
 async def setup_and_cleanup():
-    logger = logging.getLogger('syncserver')
-    logger.setLevel(logging.DEBUG)
-
     yield
 
     test_datadir = Path('test_syncserver').resolve()
@@ -93,6 +95,9 @@ async def client(session: AsyncSession):
 
     app.dependency_overrides[get_session] = session_override
     async with app_lifespan(app):
+        logger = logging.getLogger('syncserver')
+        logger.setLevel(logging.DEBUG)
+        
         async with AsyncClient(transport=ASGITransport(app), base_url='http://test') as client:
             yield client
 
