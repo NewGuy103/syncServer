@@ -27,7 +27,7 @@ services:
       start_period: 30s
       timeout: 10s
   prestart:
-    image: ghcr.io/newguy103/syncserver:edge
+    image: ghcr.io/newguy103/syncserver:latest
     # build:
     #   context: ..
     #   dockerfile: docker/Dockerfile
@@ -43,7 +43,7 @@ services:
       - POSTGRES_USER=syncserver
       - POSTGRES_PASSWORD=helloworld
   syncserver_fastapi:
-    image: ghcr.io/newguy103/syncserver:edge
+    image: ghcr.io/newguy103/syncserver:latest
     # build:
     #   context: ..
     #   dockerfile: docker/Dockerfile

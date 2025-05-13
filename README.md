@@ -65,7 +65,7 @@ docker run \
 --name newguy103-syncserver \
 --publish 8000:8000 \
 --volume ./syncserver_data:/app/syncserver \
-ghcr.io/newguy103/syncserver
+ghcr.io/newguy103/syncserver:latest
 ```
 
 Or if you cloned the repository directly:
