@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>400</width>
-    <height>222</height>
+    <height>216</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -22,57 +22,43 @@
      <property name="frameShadow">
       <enum>QFrame::Shadow::Raised</enum>
      </property>
-     <widget class="QWidget" name="verticalLayoutWidget">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>10</y>
-        <width>351</width>
-        <height>61</height>
-       </rect>
-      </property>
-      <layout class="QVBoxLayout" name="oldNameLayout">
-       <item>
-        <widget class="QLabel" name="oldFolderNameLabel">
-         <property name="text">
-          <string>Old folder name:</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLineEdit" name="oldFolderNameLineEdit">
-         <property name="readOnly">
-          <bool>true</bool>
-         </property>
-         <property name="placeholderText">
-          <string>/file.txt</string>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="verticalLayoutWidget_2">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>90</y>
-        <width>351</width>
-        <height>61</height>
-       </rect>
-      </property>
-      <layout class="QVBoxLayout" name="newNameLayout">
-       <item>
-        <widget class="QLabel" name="newFolderNameLabel">
-         <property name="text">
-          <string>New folder name:</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLineEdit" name="newFolderNameLineEdit"/>
-       </item>
-      </layout>
-     </widget>
+     <layout class="QVBoxLayout" name="verticalLayout_2">
+      <item>
+       <layout class="QVBoxLayout" name="oldNameLayout">
+        <item>
+         <widget class="QLabel" name="oldFolderNameLabel">
+          <property name="text">
+           <string>Old folder name:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="oldFolderNameLineEdit">
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+          <property name="placeholderText">
+           <string>/file.txt</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="newNameLayout">
+        <item>
+         <widget class="QLabel" name="newFolderNameLabel">
+          <property name="text">
+           <string>New folder name:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="newFolderNameLineEdit"/>
+        </item>
+       </layout>
+      </item>
+     </layout>
     </widget>
    </item>
    <item>

@@ -23,45 +23,45 @@ class Ui_RenameFolderDialog(object):
     def setupUi(self, RenameFolderDialog):
         if not RenameFolderDialog.objectName():
             RenameFolderDialog.setObjectName(u"RenameFolderDialog")
-        RenameFolderDialog.resize(400, 222)
+        RenameFolderDialog.resize(400, 216)
         self.verticalLayout = QVBoxLayout(RenameFolderDialog)
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.mainDialogFrame = QFrame(RenameFolderDialog)
         self.mainDialogFrame.setObjectName(u"mainDialogFrame")
         self.mainDialogFrame.setFrameShape(QFrame.Shape.StyledPanel)
         self.mainDialogFrame.setFrameShadow(QFrame.Shadow.Raised)
-        self.verticalLayoutWidget = QWidget(self.mainDialogFrame)
-        self.verticalLayoutWidget.setObjectName(u"verticalLayoutWidget")
-        self.verticalLayoutWidget.setGeometry(QRect(10, 10, 351, 61))
-        self.oldNameLayout = QVBoxLayout(self.verticalLayoutWidget)
+        self.verticalLayout_2 = QVBoxLayout(self.mainDialogFrame)
+        self.verticalLayout_2.setObjectName(u"verticalLayout_2")
+        self.oldNameLayout = QVBoxLayout()
         self.oldNameLayout.setObjectName(u"oldNameLayout")
-        self.oldNameLayout.setContentsMargins(0, 0, 0, 0)
-        self.oldFolderNameLabel = QLabel(self.verticalLayoutWidget)
+        self.oldFolderNameLabel = QLabel(self.mainDialogFrame)
         self.oldFolderNameLabel.setObjectName(u"oldFolderNameLabel")
 
         self.oldNameLayout.addWidget(self.oldFolderNameLabel)
 
-        self.oldFolderNameLineEdit = QLineEdit(self.verticalLayoutWidget)
+        self.oldFolderNameLineEdit = QLineEdit(self.mainDialogFrame)
         self.oldFolderNameLineEdit.setObjectName(u"oldFolderNameLineEdit")
         self.oldFolderNameLineEdit.setReadOnly(True)
 
         self.oldNameLayout.addWidget(self.oldFolderNameLineEdit)
 
-        self.verticalLayoutWidget_2 = QWidget(self.mainDialogFrame)
-        self.verticalLayoutWidget_2.setObjectName(u"verticalLayoutWidget_2")
-        self.verticalLayoutWidget_2.setGeometry(QRect(10, 90, 351, 61))
-        self.newNameLayout = QVBoxLayout(self.verticalLayoutWidget_2)
+
+        self.verticalLayout_2.addLayout(self.oldNameLayout)
+
+        self.newNameLayout = QVBoxLayout()
         self.newNameLayout.setObjectName(u"newNameLayout")
-        self.newNameLayout.setContentsMargins(0, 0, 0, 0)
-        self.newFolderNameLabel = QLabel(self.verticalLayoutWidget_2)
+        self.newFolderNameLabel = QLabel(self.mainDialogFrame)
         self.newFolderNameLabel.setObjectName(u"newFolderNameLabel")
 
         self.newNameLayout.addWidget(self.newFolderNameLabel)
 
-        self.newFolderNameLineEdit = QLineEdit(self.verticalLayoutWidget_2)
+        self.newFolderNameLineEdit = QLineEdit(self.mainDialogFrame)
         self.newFolderNameLineEdit.setObjectName(u"newFolderNameLineEdit")
 
         self.newNameLayout.addWidget(self.newFolderNameLineEdit)
+
+
+        self.verticalLayout_2.addLayout(self.newNameLayout)
 
 
         self.verticalLayout.addWidget(self.mainDialogFrame)

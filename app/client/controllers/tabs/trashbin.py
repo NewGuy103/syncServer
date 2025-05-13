@@ -22,8 +22,6 @@ if typing.TYPE_CHECKING:
     from ..apps import AppsController
 
 
-# TODO: Use a signal to notify files tab controller about a file restore
-# TODO: Use a signal so files can notify about a new delete
 class TrashbinTabController(QObject):
     def __init__(self, app_parent: 'AppsController'):
         super().__init__(app_parent)
@@ -344,7 +342,7 @@ class TrashbinManagerDialog(QDialog):
     def update_version_list(self):
         func = partial(
             self.main_client.files.deleted.show_deleted_versions,
-            self._file_path
+            self._file_path, limit=100
         )
 
         self.update_worker = WorkerThread(func)
@@ -430,7 +428,7 @@ class TrashbinManagerDialog(QDialog):
     
     @Slot(GenericSuccess)
     def delete_completed(self, data: GenericSuccess):
-        if self.ui.deletedFilesListWidget.count() == 1 or self._deleted_all:
+        if self.ui.deletedFilesListWidget.count() == 1 or self._delete_all:
             self.accept()
             self.ctrl_parent.update_deleted_file_list()
             return

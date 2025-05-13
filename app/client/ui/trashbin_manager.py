@@ -15,9 +15,9 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QAbstractButton, QApplication, QComboBox, QDialog,
-    QDialogButtonBox, QFrame, QHBoxLayout, QLabel,
-    QListWidget, QListWidgetItem, QPushButton, QSizePolicy,
+from PySide6.QtWidgets import (QAbstractButton, QApplication, QDialog, QDialogButtonBox,
+    QFrame, QHBoxLayout, QLabel, QListWidget,
+    QListWidgetItem, QPushButton, QSizePolicy, QSpacerItem,
     QVBoxLayout, QWidget)
 
 class Ui_TrashbinManagerDialog(object):
@@ -77,41 +77,9 @@ class Ui_TrashbinManagerDialog(object):
 
         self.horizontalLayout.addWidget(self.deleteAllVersionsButton)
 
-        self.currentPageLabel = QLabel(self.currentPageFrame)
-        self.currentPageLabel.setObjectName(u"currentPageLabel")
-        self.currentPageLabel.setFont(font)
-        self.currentPageLabel.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignTrailing|Qt.AlignmentFlag.AlignVCenter)
+        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        self.horizontalLayout.addWidget(self.currentPageLabel)
-
-        self.goBackButton = QPushButton(self.currentPageFrame)
-        self.goBackButton.setObjectName(u"goBackButton")
-        sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum)
-        sizePolicy3.setHorizontalStretch(0)
-        sizePolicy3.setVerticalStretch(0)
-        sizePolicy3.setHeightForWidth(self.goBackButton.sizePolicy().hasHeightForWidth())
-        self.goBackButton.setSizePolicy(sizePolicy3)
-        icon1 = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.GoPrevious))
-        self.goBackButton.setIcon(icon1)
-
-        self.horizontalLayout.addWidget(self.goBackButton)
-
-        self.currentPageComboBox = QComboBox(self.currentPageFrame)
-        self.currentPageComboBox.addItem("")
-        self.currentPageComboBox.setObjectName(u"currentPageComboBox")
-        sizePolicy2.setHeightForWidth(self.currentPageComboBox.sizePolicy().hasHeightForWidth())
-        self.currentPageComboBox.setSizePolicy(sizePolicy2)
-
-        self.horizontalLayout.addWidget(self.currentPageComboBox)
-
-        self.goForwardButton = QPushButton(self.currentPageFrame)
-        self.goForwardButton.setObjectName(u"goForwardButton")
-        sizePolicy2.setHeightForWidth(self.goForwardButton.sizePolicy().hasHeightForWidth())
-        self.goForwardButton.setSizePolicy(sizePolicy2)
-        icon2 = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.GoNext))
-        self.goForwardButton.setIcon(icon2)
-
-        self.horizontalLayout.addWidget(self.goForwardButton)
+        self.horizontalLayout.addItem(self.horizontalSpacer)
 
 
         self.verticalLayout_3.addWidget(self.currentPageFrame)
@@ -138,10 +106,5 @@ class Ui_TrashbinManagerDialog(object):
         TrashbinManagerDialog.setWindowTitle(QCoreApplication.translate("TrashbinManagerDialog", u"syncServer - Trashbin Manager", None))
         self.currentFileLabel.setText(QCoreApplication.translate("TrashbinManagerDialog", u"Current File: /file.txt", None))
         self.deleteAllVersionsButton.setText(QCoreApplication.translate("TrashbinManagerDialog", u"Delete All Versions", None))
-        self.currentPageLabel.setText(QCoreApplication.translate("TrashbinManagerDialog", u"Page:", None))
-        self.goBackButton.setText("")
-        self.currentPageComboBox.setItemText(0, QCoreApplication.translate("TrashbinManagerDialog", u"1", None))
-
-        self.goForwardButton.setText("")
     # retranslateUi
 

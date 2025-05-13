@@ -30,38 +30,38 @@ class Ui_RenameFileDialog(object):
         self.mainDialogFrame.setObjectName(u"mainDialogFrame")
         self.mainDialogFrame.setFrameShape(QFrame.Shape.StyledPanel)
         self.mainDialogFrame.setFrameShadow(QFrame.Shadow.Raised)
-        self.verticalLayoutWidget = QWidget(self.mainDialogFrame)
-        self.verticalLayoutWidget.setObjectName(u"verticalLayoutWidget")
-        self.verticalLayoutWidget.setGeometry(QRect(10, 10, 351, 61))
-        self.oldNameLayout = QVBoxLayout(self.verticalLayoutWidget)
+        self.verticalLayout_2 = QVBoxLayout(self.mainDialogFrame)
+        self.verticalLayout_2.setObjectName(u"verticalLayout_2")
+        self.oldNameLayout = QVBoxLayout()
         self.oldNameLayout.setObjectName(u"oldNameLayout")
-        self.oldNameLayout.setContentsMargins(0, 0, 0, 0)
-        self.oldFilenameLabel = QLabel(self.verticalLayoutWidget)
+        self.oldFilenameLabel = QLabel(self.mainDialogFrame)
         self.oldFilenameLabel.setObjectName(u"oldFilenameLabel")
 
         self.oldNameLayout.addWidget(self.oldFilenameLabel)
 
-        self.oldFilenameLineEdit = QLineEdit(self.verticalLayoutWidget)
+        self.oldFilenameLineEdit = QLineEdit(self.mainDialogFrame)
         self.oldFilenameLineEdit.setObjectName(u"oldFilenameLineEdit")
         self.oldFilenameLineEdit.setReadOnly(True)
 
         self.oldNameLayout.addWidget(self.oldFilenameLineEdit)
 
-        self.verticalLayoutWidget_2 = QWidget(self.mainDialogFrame)
-        self.verticalLayoutWidget_2.setObjectName(u"verticalLayoutWidget_2")
-        self.verticalLayoutWidget_2.setGeometry(QRect(10, 90, 351, 61))
-        self.newNameLayout = QVBoxLayout(self.verticalLayoutWidget_2)
+
+        self.verticalLayout_2.addLayout(self.oldNameLayout)
+
+        self.newNameLayout = QVBoxLayout()
         self.newNameLayout.setObjectName(u"newNameLayout")
-        self.newNameLayout.setContentsMargins(0, 0, 0, 0)
-        self.newFilenameLabel = QLabel(self.verticalLayoutWidget_2)
+        self.newFilenameLabel = QLabel(self.mainDialogFrame)
         self.newFilenameLabel.setObjectName(u"newFilenameLabel")
 
         self.newNameLayout.addWidget(self.newFilenameLabel)
 
-        self.newFilenameLineEdit = QLineEdit(self.verticalLayoutWidget_2)
+        self.newFilenameLineEdit = QLineEdit(self.mainDialogFrame)
         self.newFilenameLineEdit.setObjectName(u"newFilenameLineEdit")
 
         self.newNameLayout.addWidget(self.newFilenameLineEdit)
+
+
+        self.verticalLayout_2.addLayout(self.newNameLayout)
 
 
         self.verticalLayout.addWidget(self.mainDialogFrame)

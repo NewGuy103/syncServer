@@ -10,6 +10,7 @@ from PySide6.QtCore import QObject, QThread, Signal, Slot
 from ..interface import MainClient
 from ..models import AccessTokenResponse, AccessTokenError
 from ..workers import WorkerThread
+from ..config import AvailableLogins
 
 
 if typing.TYPE_CHECKING:
@@ -17,7 +18,7 @@ if typing.TYPE_CHECKING:
 
 
 class LoginController(QObject):
-    login_done = Signal(str, str)
+    login_done = Signal(AvailableLogins)
     
     def __init__(self, mw_parent: 'MainWindow'):
         super().__init__(mw_parent)
@@ -33,16 +34,38 @@ class LoginController(QObject):
     def check_saved_credentials(self):
         """Only check for saved keyring credentials, not verify, leave that to the dashboard"""
         
+        login_models = self.mw_parent.app_settings.logins
+
+        # No logins in config file
+        if not login_models:
+            return
+        
+        for login_model in login_models:
+            if not login_model.is_default:
+                continue
+
+            auth_header = keyring.get_password(
+                'newguy103-syncserver',
+                login_model.username
+            )
+
+            if auth_header:
+                self.login_done.emit(login_model)
+                return
+
+        # No default login, make the first login default
+        first_login = login_models[0]
         auth_header = keyring.get_password(
             'newguy103-syncserver',
-            self.mw_parent.app_settings.username
+            first_login.username
         )
 
         if auth_header:
-            self.login_done.emit(
-                self.mw_parent.app_settings.username, 
-                str(self.mw_parent.app_settings.server_url)
-            )
+            self.login_done.emit(first_login)
+            login_models[0].is_default = True
+
+            self.mw_parent.app_settings.save_settings()
+            return
 
     def login_start(self):
         server_url = self.ui.serverUrlLineEdit.text()
@@ -93,7 +116,7 @@ class LoginController(QObject):
 
         self.ui.statusbar.showMessage('Auth - Sent HTTP request for token', timeout=30000)
     
-    @Slot(AccessTokenResponse, AccessTokenError)
+    @Slot()
     def on_worker_complete(self, data: AccessTokenResponse | AccessTokenError):
         self.ui.statusbar.showMessage('Auth - HTTP response received', timeout=5000)
         if isinstance(data, AccessTokenError):
@@ -106,17 +129,43 @@ class LoginController(QObject):
             )
             return
         
+        # First user
+        if len(self.mw_parent.app_settings.logins) == 0:
+            is_default = True
+        else:
+            is_default = False
+        
+        login_model = AvailableLogins(
+            username=self.provided_username,
+            server_url=self.provided_server_url,
+            is_default=is_default
+        )
+
+        # Dont add existing login, only overwrite the keyring value
+        for existing_login in self.mw_parent.app_settings.logins:
+            if login_model.username != existing_login.username:
+                continue
+            
+            if login_model.server_url != existing_login.server_url:
+                continue
+
+            keyring.set_password(
+                'newguy103-syncserver', 
+                self.provided_username, 
+                data.access_token
+            )
+            self.login_done.emit(login_model)
+            return
+        
         keyring.set_password(
             'newguy103-syncserver', 
             self.provided_username, 
             data.access_token
         )
-        self.mw_parent.app_settings.server_url = self.provided_server_url
-        self.mw_parent.app_settings.username = self.provided_username
-
+        self.mw_parent.app_settings.logins.append(login_model)
         self.mw_parent.app_settings.save_settings()
-        self.login_done.emit(self.provided_username, self.provided_server_url)
 
+        self.login_done.emit(login_model)
         return
     
     @Slot(Exception)

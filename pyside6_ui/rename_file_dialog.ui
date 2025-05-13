@@ -22,57 +22,43 @@
      <property name="frameShadow">
       <enum>QFrame::Shadow::Raised</enum>
      </property>
-     <widget class="QWidget" name="verticalLayoutWidget">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>10</y>
-        <width>351</width>
-        <height>61</height>
-       </rect>
-      </property>
-      <layout class="QVBoxLayout" name="oldNameLayout">
-       <item>
-        <widget class="QLabel" name="oldFilenameLabel">
-         <property name="text">
-          <string>Old filename:</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLineEdit" name="oldFilenameLineEdit">
-         <property name="readOnly">
-          <bool>true</bool>
-         </property>
-         <property name="placeholderText">
-          <string>/file.txt</string>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="verticalLayoutWidget_2">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>90</y>
-        <width>351</width>
-        <height>61</height>
-       </rect>
-      </property>
-      <layout class="QVBoxLayout" name="newNameLayout">
-       <item>
-        <widget class="QLabel" name="newFilenameLabel">
-         <property name="text">
-          <string>New filename:</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLineEdit" name="newFilenameLineEdit"/>
-       </item>
-      </layout>
-     </widget>
+     <layout class="QVBoxLayout" name="verticalLayout_2">
+      <item>
+       <layout class="QVBoxLayout" name="oldNameLayout">
+        <item>
+         <widget class="QLabel" name="oldFilenameLabel">
+          <property name="text">
+           <string>Old filename:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="oldFilenameLineEdit">
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+          <property name="placeholderText">
+           <string>/file.txt</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="newNameLayout">
+        <item>
+         <widget class="QLabel" name="newFilenameLabel">
+          <property name="text">
+           <string>New filename:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="newFilenameLineEdit"/>
+        </item>
+       </layout>
+      </item>
+     </layout>
     </widget>
    </item>
    <item>

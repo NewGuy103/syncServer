@@ -1,6 +1,4 @@
 import json
-import logging
-
 import tempfile
 import httpx
 
@@ -12,24 +10,9 @@ from .models import (
     APIKeyInfo, FolderContents, GenericSuccess,
     DeletedFilesGet
 )
-
+from .config import logger
 
 CHUNK_SIZE = 10 * 1024 * 1024  # 10MiB
-
-# TODO: Implement a better/simpler log setup
-logger: logging.Logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-formatter: logging.Formatter = logging.Formatter(
-    '[%(name)s]: [%(module)s | %(funcName)s] - [%(asctime)s] - [%(levelname)s] - %(message)s', 
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-stream_handler: logging.StreamHandler = logging.StreamHandler()
-stream_handler.setFormatter(formatter)
-
-logger.addHandler(stream_handler)
-
 
 # TODO: Use async httpx when PySide6 supports the asyncio event loop features
 # or learn trio to make this asyncio
@@ -37,6 +20,20 @@ class MainClient:
     def __init__(self, authorization: str, server_url: str):
         self.auth_header: str = authorization
         self.server_url: str = server_url
+
+    def log_request(self, req: httpx.Request):
+        headers = dict(req.headers)
+        if headers.get('authorization'):
+            headers['authorization'] = '...'
+
+        logger.debug("HTTP request sent: [%s %s] - Headers: %s", req.method, req.url, headers)
+
+    def log_response(self, res: httpx.Response):
+        req = res.request
+        logger.debug(
+            "HTTP response received from request [%s %s] - Status Code %d - Headers: %s",
+            req.method, req.url, res.status_code, dict(res.headers)
+        )
 
     @classmethod
     def fetch_authorization_header(
@@ -61,8 +58,9 @@ class MainClient:
                     },
                     data=data
                 )
-                res_data: dict = res.json()
+                logger.debug("Sent request to get Authorization token")
 
+                res_data: dict = res.json()
                 if res.is_server_error:
                     res.raise_for_status()
             except httpx.HTTPStatusError:
@@ -85,14 +83,17 @@ class MainClient:
                 )
                 raise
 
-        if res.is_client_error:    
+        if res.is_client_error:
             err_model = AccessTokenError(**res_data)
+            logger.debug("Client error: %s", str(err_model))
+            
             return err_model
         
         res_model = AccessTokenResponse(**res_data)
         return res_model
     
     def setup(self) -> bool:
+        event_hooks = {'request': [self.log_request], 'response': [self.log_response]}
         self.client: httpx.Client = httpx.Client(
             headers={
                 'accept': 'application/json',
@@ -100,7 +101,8 @@ class MainClient:
             },
             timeout=30,
             follow_redirects=False,
-            base_url=self.server_url
+            base_url=self.server_url,
+            event_hooks=event_hooks
         )
 
         try:
@@ -473,9 +475,10 @@ class DeletedFilesInterface:
 
         return res_model
 
-    def show_deleted_versions(self, path: PurePosixPath) -> list[DeletedFilesGet]:
+    def show_deleted_versions(self, path: PurePosixPath, limit: int = 100, offset: int = 0) -> list[DeletedFilesGet]:
+        params = {'limit': limit, 'offset': offset}
         try:
-            res = self.client.get(f'/api/files/deleted{path}')
+            res = self.client.get(f'/api/files/deleted{path}', params=params)
             res.raise_for_status()
 
             res_json: dict = res.json()

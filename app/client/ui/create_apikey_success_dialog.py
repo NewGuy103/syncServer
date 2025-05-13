@@ -30,35 +30,45 @@ class Ui_CreateAPIKeySuccess(object):
         self.mainDialogFrame.setObjectName(u"mainDialogFrame")
         self.mainDialogFrame.setFrameShape(QFrame.Shape.StyledPanel)
         self.mainDialogFrame.setFrameShadow(QFrame.Shadow.Raised)
-        self.verticalLayoutWidget = QWidget(self.mainDialogFrame)
-        self.verticalLayoutWidget.setObjectName(u"verticalLayoutWidget")
-        self.verticalLayoutWidget.setGeometry(QRect(10, 10, 361, 80))
-        self.mainDialogLayout = QVBoxLayout(self.verticalLayoutWidget)
+        self.verticalLayout_2 = QVBoxLayout(self.mainDialogFrame)
+        self.verticalLayout_2.setObjectName(u"verticalLayout_2")
+        self.mainDialogLayout = QVBoxLayout()
         self.mainDialogLayout.setObjectName(u"mainDialogLayout")
-        self.mainDialogLayout.setContentsMargins(0, 0, 0, 0)
-        self.keyLabel = QLabel(self.verticalLayoutWidget)
+        self.keyLabel = QLabel(self.mainDialogFrame)
         self.keyLabel.setObjectName(u"keyLabel")
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.keyLabel.sizePolicy().hasHeightForWidth())
+        self.keyLabel.setSizePolicy(sizePolicy)
 
         self.mainDialogLayout.addWidget(self.keyLabel)
 
-        self.keyLineEdit = QLineEdit(self.verticalLayoutWidget)
+        self.keyLineEdit = QLineEdit(self.mainDialogFrame)
         self.keyLineEdit.setObjectName(u"keyLineEdit")
         self.keyLineEdit.setReadOnly(True)
 
         self.mainDialogLayout.addWidget(self.keyLineEdit)
 
-        self.horizontalLayoutWidget = QWidget(self.mainDialogFrame)
-        self.horizontalLayoutWidget.setObjectName(u"horizontalLayoutWidget")
-        self.horizontalLayoutWidget.setGeometry(QRect(10, 100, 361, 31))
-        self.copyLayout = QHBoxLayout(self.horizontalLayoutWidget)
+
+        self.verticalLayout_2.addLayout(self.mainDialogLayout)
+
+        self.copyLayout = QHBoxLayout()
         self.copyLayout.setObjectName(u"copyLayout")
-        self.copyLayout.setContentsMargins(0, 0, 0, 0)
-        self.copyToClipboardButton = QPushButton(self.horizontalLayoutWidget)
+        self.copyToClipboardButton = QPushButton(self.mainDialogFrame)
         self.copyToClipboardButton.setObjectName(u"copyToClipboardButton")
+        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Maximum)
+        sizePolicy1.setHorizontalStretch(0)
+        sizePolicy1.setVerticalStretch(0)
+        sizePolicy1.setHeightForWidth(self.copyToClipboardButton.sizePolicy().hasHeightForWidth())
+        self.copyToClipboardButton.setSizePolicy(sizePolicy1)
         icon = QIcon(QIcon.fromTheme(QIcon.ThemeIcon.EditCopy))
         self.copyToClipboardButton.setIcon(icon)
 
         self.copyLayout.addWidget(self.copyToClipboardButton)
+
+
+        self.verticalLayout_2.addLayout(self.copyLayout)
 
 
         self.verticalLayout.addWidget(self.mainDialogFrame)

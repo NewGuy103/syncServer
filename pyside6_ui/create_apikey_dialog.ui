@@ -28,115 +28,111 @@
      <property name="frameShadow">
       <enum>QFrame::Shadow::Raised</enum>
      </property>
-     <widget class="QWidget" name="verticalLayoutWidget">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>10</y>
-        <width>351</width>
-        <height>61</height>
-       </rect>
-      </property>
-      <layout class="QVBoxLayout" name="enterKeyNameLayout">
-       <item>
-        <widget class="QLabel" name="enterKeyNameLabel">
-         <property name="text">
-          <string>Enter API key name:</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLineEdit" name="keyNameLineEdit"/>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="verticalLayoutWidget_2">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>100</y>
-        <width>351</width>
-        <height>61</height>
-       </rect>
-      </property>
-      <layout class="QVBoxLayout" name="enterExpiryDateLayout">
-       <item>
-        <widget class="QLabel" name="enterExpiryDateLabel">
-         <property name="text">
-          <string>Enter API key name:</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QDateTimeEdit" name="keyExpiryDateTimeEdit">
-         <property name="date">
-          <date>
-           <year>2025</year>
-           <month>3</month>
-           <day>14</day>
-          </date>
-         </property>
-         <property name="displayFormat">
-          <string>M/d/yyyy h:mm Ap</string>
-         </property>
-         <property name="timeSpec">
-          <enum>Qt::TimeSpec::LocalTime</enum>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="verticalLayoutWidget_3">
-      <property name="geometry">
-       <rect>
-        <x>10</x>
-        <y>190</y>
-        <width>354</width>
-        <height>61</height>
-       </rect>
-      </property>
-      <layout class="QVBoxLayout" name="chooseKeyPermsLayout">
-       <item>
-        <widget class="QLabel" name="chooseKeyPermsLabel">
-         <property name="text">
-          <string>Choose key permissions:</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="keyPermsLayout">
-         <item>
-          <widget class="QCheckBox" name="createPermsCheckbox">
-           <property name="text">
-            <string>Create</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QCheckBox" name="readPermsCheckbox">
-           <property name="text">
-            <string>Read</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QCheckBox" name="updatePermsCheckbox">
-           <property name="text">
-            <string>Update</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QCheckBox" name="deletePermsCheckbox">
-           <property name="text">
-            <string>Delete</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-      </layout>
-     </widget>
+     <layout class="QVBoxLayout" name="verticalLayout_2">
+      <item>
+       <layout class="QVBoxLayout" name="enterKeyNameLayout">
+        <item>
+         <widget class="QLabel" name="enterKeyNameLabel">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="text">
+           <string>Enter API key name:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="keyNameLineEdit"/>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="enterExpiryDateLayout">
+        <item>
+         <widget class="QLabel" name="enterExpiryDateLabel">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="text">
+           <string>Enter API key name:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QDateTimeEdit" name="keyExpiryDateTimeEdit">
+          <property name="date">
+           <date>
+            <year>2025</year>
+            <month>3</month>
+            <day>14</day>
+           </date>
+          </property>
+          <property name="displayFormat">
+           <string>M/d/yyyy h:mm Ap</string>
+          </property>
+          <property name="timeSpec">
+           <enum>Qt::TimeSpec::LocalTime</enum>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="chooseKeyPermsLayout">
+        <item>
+         <widget class="QLabel" name="chooseKeyPermsLabel">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="text">
+           <string>Choose key permissions:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="keyPermsLayout">
+          <item>
+           <widget class="QCheckBox" name="createPermsCheckbox">
+            <property name="text">
+             <string>Create</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="readPermsCheckbox">
+            <property name="text">
+             <string>Read</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="updatePermsCheckbox">
+            <property name="text">
+             <string>Update</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="deletePermsCheckbox">
+            <property name="text">
+             <string>Delete</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </item>
+     </layout>
     </widget>
    </item>
    <item>

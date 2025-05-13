@@ -33,154 +33,175 @@
           <property name="frameShadow">
            <enum>QFrame::Shadow::Raised</enum>
           </property>
-          <widget class="QFrame" name="loginFrame">
-           <property name="geometry">
-            <rect>
-             <x>490</x>
-             <y>220</y>
-             <width>361</width>
-             <height>231</height>
-            </rect>
-           </property>
-           <property name="frameShape">
-            <enum>QFrame::Shape::StyledPanel</enum>
-           </property>
-           <property name="frameShadow">
-            <enum>QFrame::Shadow::Raised</enum>
-           </property>
-           <widget class="QWidget" name="gridLayoutWidget">
-            <property name="geometry">
-             <rect>
-              <x>10</x>
-              <y>10</y>
-              <width>341</width>
-              <height>211</height>
-             </rect>
-            </property>
-            <layout class="QGridLayout" name="loginGridLayout">
-             <property name="verticalSpacing">
-              <number>12</number>
+          <layout class="QGridLayout" name="gridLayout_11">
+           <item row="1" column="0">
+            <widget class="QLabel" name="loginLabel">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
              </property>
-             <item row="2" column="0">
-              <widget class="QLineEdit" name="passwordLineEdit">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="font">
-                <font>
-                 <pointsize>12</pointsize>
-                </font>
-               </property>
-               <property name="toolTip">
-                <string>Enter a password.</string>
-               </property>
-               <property name="echoMode">
-                <enum>QLineEdit::EchoMode::Password</enum>
-               </property>
-               <property name="placeholderText">
-                <string>Enter password</string>
-               </property>
-              </widget>
-             </item>
-             <item row="3" column="0">
-              <widget class="QPushButton" name="loginButton">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="font">
-                <font>
-                 <pointsize>12</pointsize>
-                </font>
-               </property>
-               <property name="text">
-                <string>Login</string>
-               </property>
-              </widget>
-             </item>
-             <item row="1" column="0">
-              <widget class="QLineEdit" name="usernameLineEdit">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="font">
-                <font>
-                 <pointsize>12</pointsize>
-                </font>
-               </property>
-               <property name="toolTip">
-                <string>Enter a username less than 30 characters.</string>
-               </property>
-               <property name="maxLength">
-                <number>30</number>
-               </property>
-               <property name="placeholderText">
-                <string>Enter username</string>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="0">
-              <widget class="QLineEdit" name="serverUrlLineEdit">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="font">
-                <font>
-                 <pointsize>12</pointsize>
-                </font>
-               </property>
-               <property name="tabletTracking">
-                <bool>false</bool>
-               </property>
-               <property name="toolTip">
-                <string>Enter a server hostname. Example: http://syncserver.example.com</string>
-               </property>
-               <property name="placeholderText">
-                <string>Enter server hostname</string>
-               </property>
-              </widget>
-             </item>
-            </layout>
-           </widget>
-          </widget>
-          <widget class="QLabel" name="loginLabel">
-           <property name="geometry">
-            <rect>
-             <x>500</x>
-             <y>170</y>
-             <width>339</width>
-             <height>33</height>
-            </rect>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="font">
-            <font>
-             <pointsize>22</pointsize>
-            </font>
-           </property>
-           <property name="text">
-            <string>syncServer Login</string>
-           </property>
-           <property name="alignment">
-            <set>Qt::AlignmentFlag::AlignCenter</set>
-           </property>
-          </widget>
+             <property name="font">
+              <font>
+               <pointsize>22</pointsize>
+              </font>
+             </property>
+             <property name="text">
+              <string>syncServer Login</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignmentFlag::AlignCenter</set>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="0">
+            <spacer name="verticalSpacer_2">
+             <property name="orientation">
+              <enum>Qt::Orientation::Vertical</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>20</width>
+               <height>40</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+           <item row="2" column="0" alignment="Qt::AlignmentFlag::AlignHCenter|Qt::AlignmentFlag::AlignVCenter">
+            <widget class="QFrame" name="gridFrame">
+             <property name="minimumSize">
+              <size>
+               <width>350</width>
+               <height>230</height>
+              </size>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::Shape::StyledPanel</enum>
+             </property>
+             <layout class="QGridLayout" name="loginGridLayout">
+              <property name="leftMargin">
+               <number>10</number>
+              </property>
+              <property name="topMargin">
+               <number>10</number>
+              </property>
+              <property name="rightMargin">
+               <number>10</number>
+              </property>
+              <property name="bottomMargin">
+               <number>10</number>
+              </property>
+              <property name="verticalSpacing">
+               <number>12</number>
+              </property>
+              <item row="4" column="0">
+               <widget class="QPushButton" name="loginButton">
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+                <property name="font">
+                 <font>
+                  <pointsize>12</pointsize>
+                 </font>
+                </property>
+                <property name="text">
+                 <string>Login</string>
+                </property>
+               </widget>
+              </item>
+              <item row="3" column="0">
+               <widget class="QLineEdit" name="passwordLineEdit">
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+                <property name="font">
+                 <font>
+                  <pointsize>12</pointsize>
+                 </font>
+                </property>
+                <property name="toolTip">
+                 <string>Enter a password.</string>
+                </property>
+                <property name="echoMode">
+                 <enum>QLineEdit::EchoMode::Password</enum>
+                </property>
+                <property name="placeholderText">
+                 <string>Enter password</string>
+                </property>
+               </widget>
+              </item>
+              <item row="2" column="0">
+               <widget class="QLineEdit" name="usernameLineEdit">
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+                <property name="font">
+                 <font>
+                  <pointsize>12</pointsize>
+                 </font>
+                </property>
+                <property name="toolTip">
+                 <string>Enter a username less than 30 characters.</string>
+                </property>
+                <property name="maxLength">
+                 <number>30</number>
+                </property>
+                <property name="placeholderText">
+                 <string>Enter username</string>
+                </property>
+               </widget>
+              </item>
+              <item row="1" column="0">
+               <widget class="QLineEdit" name="serverUrlLineEdit">
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+                <property name="font">
+                 <font>
+                  <pointsize>12</pointsize>
+                 </font>
+                </property>
+                <property name="tabletTracking">
+                 <bool>false</bool>
+                </property>
+                <property name="toolTip">
+                 <string>Enter a server hostname. Example: http://syncserver.example.com</string>
+                </property>
+                <property name="placeholderText">
+                 <string>Enter server hostname</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item row="3" column="0">
+            <spacer name="verticalSpacer_3">
+             <property name="orientation">
+              <enum>Qt::Orientation::Vertical</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>20</width>
+               <height>40</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+          </layout>
          </widget>
         </item>
        </layout>
@@ -190,192 +211,383 @@
         <item row="0" column="0">
          <widget class="QTabWidget" name="appTabWidget">
           <property name="currentIndex">
-           <number>2</number>
+           <number>3</number>
           </property>
-          <widget class="QWidget" name="dashboardTab">
-           <attribute name="title">
-            <string>Dashboard</string>
-           </attribute>
-           <widget class="QLabel" name="label">
-            <property name="geometry">
-             <rect>
-              <x>10</x>
-              <y>10</y>
-              <width>201</width>
-              <height>41</height>
-             </rect>
-            </property>
-            <property name="font">
-             <font>
-              <pointsize>15</pointsize>
-             </font>
-            </property>
-            <property name="text">
-             <string>Dashboard stuff TBA</string>
-            </property>
-           </widget>
-          </widget>
           <widget class="QWidget" name="filesTab">
+           <attribute name="icon">
+            <iconset theme="QIcon::ThemeIcon::DocumentOpen"/>
+           </attribute>
            <attribute name="title">
             <string>Files</string>
            </attribute>
-           <widget class="QFrame" name="fileTabFrame">
-            <property name="geometry">
-             <rect>
-              <x>20</x>
-              <y>20</y>
-              <width>1291</width>
-              <height>551</height>
-             </rect>
-            </property>
-            <property name="frameShape">
-             <enum>QFrame::Shape::StyledPanel</enum>
-            </property>
-            <property name="frameShadow">
-             <enum>QFrame::Shadow::Raised</enum>
-            </property>
-            <widget class="QWidget" name="layoutWidget">
-             <property name="geometry">
-              <rect>
-               <x>20</x>
-               <y>20</y>
-               <width>1249</width>
-               <height>511</height>
-              </rect>
-             </property>
-             <layout class="QVBoxLayout" name="fileListLayout">
-              <property name="spacing">
-               <number>6</number>
+           <layout class="QGridLayout" name="gridLayout_5">
+            <item row="0" column="0">
+             <widget class="QFrame" name="fileTabFrame">
+              <property name="frameShape">
+               <enum>QFrame::Shape::StyledPanel</enum>
               </property>
-              <item>
-               <widget class="QLabel" name="fileListLabel">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                  <bold>false</bold>
-                 </font>
-                </property>
-                <property name="text">
-                 <string>Folder: /</string>
-                </property>
-                <property name="alignment">
-                 <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
-                </property>
-                <property name="indent">
-                 <number>20</number>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QListWidget" name="fileListWidget"/>
-              </item>
-              <item>
-               <layout class="QHBoxLayout" name="optionButtonsLayout">
-                <item>
-                 <widget class="QPushButton" name="showDownloadsManagerButton">
-                  <property name="text">
-                   <string>Downloads Manager</string>
-                  </property>
-                 </widget>
-                </item>
-               </layout>
-              </item>
-             </layout>
-            </widget>
-           </widget>
+              <property name="frameShadow">
+               <enum>QFrame::Shadow::Raised</enum>
+              </property>
+              <layout class="QGridLayout" name="gridLayout_4">
+               <item row="0" column="0">
+                <layout class="QVBoxLayout" name="fileListLayout">
+                 <property name="spacing">
+                  <number>6</number>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="fileListLabel">
+                   <property name="font">
+                    <font>
+                     <pointsize>12</pointsize>
+                     <bold>false</bold>
+                    </font>
+                   </property>
+                   <property name="text">
+                    <string>Folder: /</string>
+                   </property>
+                   <property name="alignment">
+                    <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+                   </property>
+                   <property name="indent">
+                    <number>0</number>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QListWidget" name="fileListWidget"/>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="optionButtonsLayout">
+                   <item>
+                    <widget class="QPushButton" name="showDownloadsManagerButton">
+                     <property name="text">
+                      <string>Downloads Manager</string>
+                     </property>
+                    </widget>
+                   </item>
+                  </layout>
+                 </item>
+                </layout>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
           </widget>
           <widget class="QWidget" name="trashbinTab">
+           <attribute name="icon">
+            <iconset theme="QIcon::ThemeIcon::FolderVisiting"/>
+           </attribute>
            <attribute name="title">
             <string>Trash Bin</string>
            </attribute>
-           <widget class="QFrame" name="trashbinTabFrame">
-            <property name="geometry">
-             <rect>
-              <x>20</x>
-              <y>20</y>
-              <width>1291</width>
-              <height>551</height>
-             </rect>
-            </property>
-            <property name="frameShape">
-             <enum>QFrame::Shape::StyledPanel</enum>
-            </property>
-            <property name="frameShadow">
-             <enum>QFrame::Shadow::Raised</enum>
-            </property>
-            <widget class="QWidget" name="layoutWidget_4">
-             <property name="geometry">
-              <rect>
-               <x>20</x>
-               <y>20</y>
-               <width>1249</width>
-               <height>511</height>
-              </rect>
-             </property>
-             <layout class="QVBoxLayout" name="trashbinLayout">
-              <property name="spacing">
-               <number>6</number>
+           <layout class="QGridLayout" name="gridLayout_6">
+            <item row="0" column="0">
+             <widget class="QFrame" name="trashbinTabFrame">
+              <property name="frameShape">
+               <enum>QFrame::Shape::StyledPanel</enum>
               </property>
-              <item>
-               <widget class="QLabel" name="trashbinLabel">
-                <property name="font">
-                 <font>
-                  <pointsize>12</pointsize>
-                  <bold>false</bold>
-                 </font>
-                </property>
-                <property name="text">
-                 <string>List of deleted files:</string>
-                </property>
-                <property name="alignment">
-                 <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
-                </property>
-                <property name="indent">
-                 <number>20</number>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QListWidget" name="trashbinListWidget"/>
-              </item>
-             </layout>
-            </widget>
-           </widget>
+              <property name="frameShadow">
+               <enum>QFrame::Shadow::Raised</enum>
+              </property>
+              <layout class="QGridLayout" name="gridLayout_7">
+               <item row="0" column="0">
+                <layout class="QVBoxLayout" name="trashbinLayout">
+                 <property name="spacing">
+                  <number>6</number>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="trashbinLabel">
+                   <property name="font">
+                    <font>
+                     <pointsize>12</pointsize>
+                     <bold>false</bold>
+                    </font>
+                   </property>
+                   <property name="text">
+                    <string>List of deleted files:</string>
+                   </property>
+                   <property name="alignment">
+                    <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+                   </property>
+                   <property name="indent">
+                    <number>0</number>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QListWidget" name="trashbinListWidget"/>
+                 </item>
+                </layout>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
           </widget>
           <widget class="QWidget" name="apiKeysTab">
+           <attribute name="icon">
+            <iconset theme="QIcon::ThemeIcon::DialogPassword"/>
+           </attribute>
            <attribute name="title">
             <string>API Keys</string>
            </attribute>
-           <widget class="QWidget" name="layoutWidget">
-            <property name="geometry">
-             <rect>
-              <x>30</x>
-              <y>20</y>
-              <width>1271</width>
-              <height>551</height>
-             </rect>
-            </property>
-            <layout class="QVBoxLayout" name="apiKeyListLayout">
-             <property name="spacing">
-              <number>10</number>
-             </property>
-             <item>
-              <widget class="QLabel" name="apiKeyListLabel">
-               <property name="font">
-                <font>
-                 <pointsize>16</pointsize>
-                </font>
+           <layout class="QGridLayout" name="gridLayout_8">
+            <item row="0" column="0">
+             <widget class="QFrame" name="frame">
+              <property name="frameShape">
+               <enum>QFrame::Shape::StyledPanel</enum>
+              </property>
+              <layout class="QVBoxLayout" name="apiKeyListLayout">
+               <property name="spacing">
+                <number>10</number>
                </property>
-               <property name="text">
-                <string>Your API Keys</string>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QListWidget" name="apiKeyListWidget"/>
-             </item>
-            </layout>
-           </widget>
+               <item>
+                <widget class="QLabel" name="apiKeyListLabel">
+                 <property name="font">
+                  <font>
+                   <pointsize>12</pointsize>
+                  </font>
+                 </property>
+                 <property name="text">
+                  <string>Your API Keys</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QListWidget" name="apiKeyListWidget"/>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+          <widget class="QWidget" name="settingsTab">
+           <attribute name="icon">
+            <iconset theme="QIcon::ThemeIcon::DialogInformation"/>
+           </attribute>
+           <attribute name="title">
+            <string>Settings</string>
+           </attribute>
+           <layout class="QGridLayout" name="gridLayout_3">
+            <item row="0" column="0">
+             <widget class="QFrame" name="settingsMainFrame">
+              <property name="frameShape">
+               <enum>QFrame::Shape::StyledPanel</enum>
+              </property>
+              <property name="frameShadow">
+               <enum>QFrame::Shadow::Raised</enum>
+              </property>
+              <layout class="QGridLayout" name="gridLayout_9">
+               <item row="0" column="1">
+                <widget class="QGroupBox" name="appConfigGroupbox">
+                 <property name="title">
+                  <string>App Config</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="verticalLayout_3" stretch="0,0,0,0">
+                  <item>
+                   <widget class="QWidget" name="clientInfoWidget" native="true">
+                    <property name="sizePolicy">
+                     <sizepolicy hsizetype="Maximum" vsizetype="Maximum">
+                      <horstretch>0</horstretch>
+                      <verstretch>0</verstretch>
+                     </sizepolicy>
+                    </property>
+                    <layout class="QGridLayout" name="gridLayout_10">
+                     <item row="2" column="0">
+                      <widget class="QLabel" name="serverUrlLabel">
+                       <property name="font">
+                        <font>
+                         <pointsize>12</pointsize>
+                        </font>
+                       </property>
+                       <property name="cursor">
+                        <cursorShape>IBeamCursor</cursorShape>
+                       </property>
+                       <property name="text">
+                        <string>Server URL: {server_url}</string>
+                       </property>
+                       <property name="textInteractionFlags">
+                        <set>Qt::TextInteractionFlag::TextBrowserInteraction</set>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="0" column="0">
+                      <widget class="QLabel" name="clientVersionLabel">
+                       <property name="sizePolicy">
+                        <sizepolicy hsizetype="Maximum" vsizetype="Preferred">
+                         <horstretch>0</horstretch>
+                         <verstretch>0</verstretch>
+                        </sizepolicy>
+                       </property>
+                       <property name="font">
+                        <font>
+                         <pointsize>12</pointsize>
+                        </font>
+                       </property>
+                       <property name="cursor">
+                        <cursorShape>IBeamCursor</cursorShape>
+                       </property>
+                       <property name="text">
+                        <string>Client version: {version}</string>
+                       </property>
+                       <property name="textInteractionFlags">
+                        <set>Qt::TextInteractionFlag::TextBrowserInteraction</set>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="1" column="0">
+                      <widget class="QLabel" name="appCurrentUsernameLabel">
+                       <property name="font">
+                        <font>
+                         <pointsize>12</pointsize>
+                        </font>
+                       </property>
+                       <property name="cursor">
+                        <cursorShape>IBeamCursor</cursorShape>
+                       </property>
+                       <property name="text">
+                        <string>User: {username}</string>
+                       </property>
+                       <property name="textInteractionFlags">
+                        <set>Qt::TextInteractionFlag::TextBrowserInteraction</set>
+                       </property>
+                      </widget>
+                     </item>
+                    </layout>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QWidget" name="logLevelWidget" native="true">
+                    <property name="sizePolicy">
+                     <sizepolicy hsizetype="Maximum" vsizetype="Maximum">
+                      <horstretch>0</horstretch>
+                      <verstretch>0</verstretch>
+                     </sizepolicy>
+                    </property>
+                    <layout class="QHBoxLayout" name="horizontalLayout">
+                     <property name="bottomMargin">
+                      <number>0</number>
+                     </property>
+                     <item>
+                      <widget class="QLabel" name="logLevelLabel">
+                       <property name="sizePolicy">
+                        <sizepolicy hsizetype="Maximum" vsizetype="Preferred">
+                         <horstretch>0</horstretch>
+                         <verstretch>0</verstretch>
+                        </sizepolicy>
+                       </property>
+                       <property name="text">
+                        <string>Log Level:</string>
+                       </property>
+                       <property name="alignment">
+                        <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignVCenter</set>
+                       </property>
+                      </widget>
+                     </item>
+                     <item>
+                      <widget class="QComboBox" name="logLevelComboBox">
+                       <property name="sizePolicy">
+                        <sizepolicy hsizetype="Maximum" vsizetype="Preferred">
+                         <horstretch>0</horstretch>
+                         <verstretch>0</verstretch>
+                        </sizepolicy>
+                       </property>
+                       <item>
+                        <property name="text">
+                         <string>Debug</string>
+                        </property>
+                       </item>
+                       <item>
+                        <property name="text">
+                         <string>Info</string>
+                        </property>
+                       </item>
+                       <item>
+                        <property name="text">
+                         <string>Warning</string>
+                        </property>
+                       </item>
+                       <item>
+                        <property name="text">
+                         <string>Error</string>
+                        </property>
+                       </item>
+                       <item>
+                        <property name="text">
+                         <string>Critical</string>
+                        </property>
+                       </item>
+                      </widget>
+                     </item>
+                    </layout>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QWidget" name="logFileWidget" native="true">
+                    <property name="sizePolicy">
+                     <sizepolicy hsizetype="Maximum" vsizetype="Preferred">
+                      <horstretch>0</horstretch>
+                      <verstretch>0</verstretch>
+                     </sizepolicy>
+                    </property>
+                    <layout class="QHBoxLayout" name="horizontalLayout_2">
+                     <property name="topMargin">
+                      <number>0</number>
+                     </property>
+                     <item>
+                      <widget class="QLabel" name="logFilePathLabel">
+                       <property name="text">
+                        <string>Log File: {file_path}</string>
+                       </property>
+                       <property name="textInteractionFlags">
+                        <set>Qt::TextInteractionFlag::TextBrowserInteraction</set>
+                       </property>
+                      </widget>
+                     </item>
+                    </layout>
+                   </widget>
+                  </item>
+                  <item>
+                   <spacer name="verticalSpacer">
+                    <property name="orientation">
+                     <enum>Qt::Orientation::Vertical</enum>
+                    </property>
+                    <property name="sizeHint" stdset="0">
+                     <size>
+                      <width>20</width>
+                      <height>40</height>
+                     </size>
+                    </property>
+                   </spacer>
+                  </item>
+                 </layout>
+                </widget>
+               </item>
+               <item row="0" column="0">
+                <widget class="QGroupBox" name="usersGroupbox">
+                 <property name="title">
+                  <string>Logged in accounts</string>
+                 </property>
+                 <layout class="QVBoxLayout" name="verticalLayout_2">
+                  <item>
+                   <widget class="QListWidget" name="accountsListWidget">
+                    <property name="sizePolicy">
+                     <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+                      <horstretch>0</horstretch>
+                      <verstretch>0</verstretch>
+                     </sizepolicy>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
           </widget>
          </widget>
         </item>
@@ -422,54 +634,5 @@
   <tabstop>loginButton</tabstop>
  </tabstops>
  <resources/>
- <connections>
-  <connection>
-   <sender>serverUrlLineEdit</sender>
-   <signal>returnPressed()</signal>
-   <receiver>usernameLineEdit</receiver>
-   <slot>setFocus()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>584</x>
-     <y>288</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>594</x>
-     <y>342</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>usernameLineEdit</sender>
-   <signal>returnPressed()</signal>
-   <receiver>passwordLineEdit</receiver>
-   <slot>setFocus()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>656</x>
-     <y>344</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>595</x>
-     <y>419</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>passwordLineEdit</sender>
-   <signal>returnPressed()</signal>
-   <receiver>loginButton</receiver>
-   <slot>click()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>663</x>
-     <y>401</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>599</x>
-     <y>463</y>
-    </hint>
-   </hints>
-  </connection>
- </connections>
+ <connections/>
 </ui>

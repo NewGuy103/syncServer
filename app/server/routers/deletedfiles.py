@@ -179,6 +179,10 @@ async def delete_file_versions(
             'model': HTTPStatusError,
             'description': "File not found, or parent folder was not found."
         },
+        409: {
+            'model': HTTPStatusError,
+            'description': 'A non-deleted file version already exists.'
+        }
     },
     response_model=GenericSuccess
 )
@@ -195,9 +199,12 @@ async def restore_file_version(
     if os_filepath.is_dir():
         raise HTTPException(status_code=400, detail="File path provided is a folder")
 
+    if os_filepath.is_file():
+        raise HTTPException(status_code=409, detail="Non-deleted file exists")
+    
     file_exists: bool = await database.files.lookup_database_for_file(session, user.username, os_filepath)
     if not file_exists:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(status_code=404, detail="File path not found")
     
     file_restored = await database.files.deleted_files.restore_version(
         session, user.username, 

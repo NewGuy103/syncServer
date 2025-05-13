@@ -33,75 +33,83 @@ class Ui_CreateAPIKeyDialog(object):
         self.mainDialogFrame.setObjectName(u"mainDialogFrame")
         self.mainDialogFrame.setFrameShape(QFrame.Shape.StyledPanel)
         self.mainDialogFrame.setFrameShadow(QFrame.Shadow.Raised)
-        self.verticalLayoutWidget = QWidget(self.mainDialogFrame)
-        self.verticalLayoutWidget.setObjectName(u"verticalLayoutWidget")
-        self.verticalLayoutWidget.setGeometry(QRect(10, 10, 351, 61))
-        self.enterKeyNameLayout = QVBoxLayout(self.verticalLayoutWidget)
+        self.verticalLayout_2 = QVBoxLayout(self.mainDialogFrame)
+        self.verticalLayout_2.setObjectName(u"verticalLayout_2")
+        self.enterKeyNameLayout = QVBoxLayout()
         self.enterKeyNameLayout.setObjectName(u"enterKeyNameLayout")
-        self.enterKeyNameLayout.setContentsMargins(0, 0, 0, 0)
-        self.enterKeyNameLabel = QLabel(self.verticalLayoutWidget)
+        self.enterKeyNameLabel = QLabel(self.mainDialogFrame)
         self.enterKeyNameLabel.setObjectName(u"enterKeyNameLabel")
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.enterKeyNameLabel.sizePolicy().hasHeightForWidth())
+        self.enterKeyNameLabel.setSizePolicy(sizePolicy)
 
         self.enterKeyNameLayout.addWidget(self.enterKeyNameLabel)
 
-        self.keyNameLineEdit = QLineEdit(self.verticalLayoutWidget)
+        self.keyNameLineEdit = QLineEdit(self.mainDialogFrame)
         self.keyNameLineEdit.setObjectName(u"keyNameLineEdit")
 
         self.enterKeyNameLayout.addWidget(self.keyNameLineEdit)
 
-        self.verticalLayoutWidget_2 = QWidget(self.mainDialogFrame)
-        self.verticalLayoutWidget_2.setObjectName(u"verticalLayoutWidget_2")
-        self.verticalLayoutWidget_2.setGeometry(QRect(10, 100, 351, 61))
-        self.enterExpiryDateLayout = QVBoxLayout(self.verticalLayoutWidget_2)
+
+        self.verticalLayout_2.addLayout(self.enterKeyNameLayout)
+
+        self.enterExpiryDateLayout = QVBoxLayout()
         self.enterExpiryDateLayout.setObjectName(u"enterExpiryDateLayout")
-        self.enterExpiryDateLayout.setContentsMargins(0, 0, 0, 0)
-        self.enterExpiryDateLabel = QLabel(self.verticalLayoutWidget_2)
+        self.enterExpiryDateLabel = QLabel(self.mainDialogFrame)
         self.enterExpiryDateLabel.setObjectName(u"enterExpiryDateLabel")
+        sizePolicy.setHeightForWidth(self.enterExpiryDateLabel.sizePolicy().hasHeightForWidth())
+        self.enterExpiryDateLabel.setSizePolicy(sizePolicy)
 
         self.enterExpiryDateLayout.addWidget(self.enterExpiryDateLabel)
 
-        self.keyExpiryDateTimeEdit = QDateTimeEdit(self.verticalLayoutWidget_2)
+        self.keyExpiryDateTimeEdit = QDateTimeEdit(self.mainDialogFrame)
         self.keyExpiryDateTimeEdit.setObjectName(u"keyExpiryDateTimeEdit")
         self.keyExpiryDateTimeEdit.setDate(QDate(2025, 3, 14))
         self.keyExpiryDateTimeEdit.setTimeSpec(Qt.TimeSpec.LocalTime)
 
         self.enterExpiryDateLayout.addWidget(self.keyExpiryDateTimeEdit)
 
-        self.verticalLayoutWidget_3 = QWidget(self.mainDialogFrame)
-        self.verticalLayoutWidget_3.setObjectName(u"verticalLayoutWidget_3")
-        self.verticalLayoutWidget_3.setGeometry(QRect(10, 190, 354, 61))
-        self.chooseKeyPermsLayout = QVBoxLayout(self.verticalLayoutWidget_3)
+
+        self.verticalLayout_2.addLayout(self.enterExpiryDateLayout)
+
+        self.chooseKeyPermsLayout = QVBoxLayout()
         self.chooseKeyPermsLayout.setObjectName(u"chooseKeyPermsLayout")
-        self.chooseKeyPermsLayout.setContentsMargins(0, 0, 0, 0)
-        self.chooseKeyPermsLabel = QLabel(self.verticalLayoutWidget_3)
+        self.chooseKeyPermsLabel = QLabel(self.mainDialogFrame)
         self.chooseKeyPermsLabel.setObjectName(u"chooseKeyPermsLabel")
+        sizePolicy.setHeightForWidth(self.chooseKeyPermsLabel.sizePolicy().hasHeightForWidth())
+        self.chooseKeyPermsLabel.setSizePolicy(sizePolicy)
 
         self.chooseKeyPermsLayout.addWidget(self.chooseKeyPermsLabel)
 
         self.keyPermsLayout = QHBoxLayout()
         self.keyPermsLayout.setObjectName(u"keyPermsLayout")
-        self.createPermsCheckbox = QCheckBox(self.verticalLayoutWidget_3)
+        self.createPermsCheckbox = QCheckBox(self.mainDialogFrame)
         self.createPermsCheckbox.setObjectName(u"createPermsCheckbox")
 
         self.keyPermsLayout.addWidget(self.createPermsCheckbox)
 
-        self.readPermsCheckbox = QCheckBox(self.verticalLayoutWidget_3)
+        self.readPermsCheckbox = QCheckBox(self.mainDialogFrame)
         self.readPermsCheckbox.setObjectName(u"readPermsCheckbox")
 
         self.keyPermsLayout.addWidget(self.readPermsCheckbox)
 
-        self.updatePermsCheckbox = QCheckBox(self.verticalLayoutWidget_3)
+        self.updatePermsCheckbox = QCheckBox(self.mainDialogFrame)
         self.updatePermsCheckbox.setObjectName(u"updatePermsCheckbox")
 
         self.keyPermsLayout.addWidget(self.updatePermsCheckbox)
 
-        self.deletePermsCheckbox = QCheckBox(self.verticalLayoutWidget_3)
+        self.deletePermsCheckbox = QCheckBox(self.mainDialogFrame)
         self.deletePermsCheckbox.setObjectName(u"deletePermsCheckbox")
 
         self.keyPermsLayout.addWidget(self.deletePermsCheckbox)
 
 
         self.chooseKeyPermsLayout.addLayout(self.keyPermsLayout)
+
+
+        self.verticalLayout_2.addLayout(self.chooseKeyPermsLayout)
 
 
         self.verticalLayout.addWidget(self.mainDialogFrame)

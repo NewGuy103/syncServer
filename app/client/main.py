@@ -5,7 +5,7 @@ import traceback
 from PySide6.QtWidgets import QMainWindow, QApplication, QMessageBox
 from PySide6.QtGui import QCloseEvent
 
-from .config import AppSettings
+from .config import AppSettings, setup_logger
 from .ui.main import Ui_MainWindow
 from .controllers.login import LoginController
 from .controllers.apps import AppsController
@@ -23,13 +23,17 @@ class MainWindow(QMainWindow):
 
         self.ui.mainStackedWidget.setCurrentIndex(0)
 
-        # TODO: Make a dialog that shows copyright info and link to source code
-        # link it to the fastapi-rewrite branch until its merged into main
         self.ui.actionSource_Code.triggered.connect(
-            lambda: webbrowser.open('https://github.com/NewGuy103/syncServer/tree/fastapi-rewrite')
+            lambda: webbrowser.open('https://github.com/NewGuy103/syncServer')
         )
         self.setup_config()
     
+    def reload_config(self):
+        try:
+            self.app_settings = AppSettings()
+        except Exception as exc:
+            self.config_load_failed(exc)
+
     def setup_config(self):
         try:
             self.app_settings = AppSettings()
@@ -38,6 +42,8 @@ class MainWindow(QMainWindow):
             self.config_load_failed(exc)
 
     def config_loaded(self):
+        setup_logger(self.app_settings.log_level)
+        
         self.login_ctrl = LoginController(self)
         self.apps_ctrl = AppsController(self)
 

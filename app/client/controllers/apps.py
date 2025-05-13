@@ -7,10 +7,11 @@ from PySide6.QtWidgets import QMessageBox
 from PySide6.QtCore import QObject, QThread, Slot, Signal
 from ..interface import MainClient
 from ..workers import WorkerThread
+from ..config import AvailableLogins
 from .tabs.files import FilesTabController
 from .tabs.api_keys import APIKeysTabController
 from .tabs.trashbin import TrashbinTabController
-
+from .tabs.settings import SettingsTabController
 
 if typing.TYPE_CHECKING:
     from ..main import MainWindow
@@ -28,12 +29,13 @@ class AppsController(QObject):
 
         self.signals = ControllerSignals(self)
     
-    @Slot(str, str)
-    def setup(self, username: str, server_url: str):
-        authorization = keyring.get_password('newguy103-syncserver', username)
+    @Slot(AvailableLogins)
+    def setup(self, login_model: AvailableLogins):
+        authorization = keyring.get_password('newguy103-syncserver', login_model.username)
+        self.current_login = login_model
 
         self.ui.mainStackedWidget.setCurrentIndex(1)  # app tabs
-        self.main_client = MainClient(authorization, server_url)
+        self.main_client = MainClient(authorization, str(login_model.server_url))
 
         self.worker = WorkerThread(self.main_client.setup)
         self.thread = QThread(self)
@@ -57,11 +59,13 @@ class AppsController(QObject):
         self.apikeys_ctrl = APIKeysTabController(self)
 
         self.trashbin_ctrl = TrashbinTabController(self)
-        
+        self.settings_ctrl = SettingsTabController(self)
+
         self.files_ctrl.setup()
         self.apikeys_ctrl.setup()
 
         self.trashbin_ctrl.setup()
+        self.settings_ctrl.setup()
     
     @Slot(Exception)
     def setup_fail(self, exc: Exception):
@@ -86,6 +90,7 @@ class AppsController(QObject):
                     buttons=QMessageBox.StandardButton.Ok,
                     defaultButton=QMessageBox.StandardButton.Ok
                 )
+                self.ui.mainStackedWidget.setCurrentIndex(0)
             case _:
                 QMessageBox.critical(
                     self.mw_parent,
